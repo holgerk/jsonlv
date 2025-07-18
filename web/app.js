@@ -76,18 +76,23 @@ function renderFilters() {
       btn.textContent = `${val} (${values[val]})`;
       btn.className = 'filter-btn';
       if (filters[key] && filters[key].includes(val)) btn.classList.add('active');
-      btn.onclick = () => toggleFilter(key, val);
+      btn.onclick = function () { toggleFilter(this, key, val); };
       box.appendChild(btn);
     }
     filterPanel.appendChild(box);
   }
 }
 
-function toggleFilter(key, val) {
+function toggleFilter(btn, key, val) {
   if (!filters[key]) filters[key] = [];
   const idx = filters[key].indexOf(val);
-  if (idx === -1) filters[key].push(val);
-  else filters[key].splice(idx, 1);
+  if (idx === -1) {
+    btn.classList.add('active');
+    filters[key].push(val);
+  } else {
+    btn.classList.remove('active');
+    filters[key].splice(idx, 1);
+  }
   if (filters[key].length === 0) delete filters[key];
   ws.send(JSON.stringify({ type: 'set_filter', payload: filters }));
 }
