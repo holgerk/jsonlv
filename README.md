@@ -100,7 +100,8 @@ A command-line and web-based real-time log inspection tool written in Go.
   - Payload:
     ```json
     {
-      "index": {
+      "type": "set_index",
+      "payload": {
         "channel": {
           "testing": 1
         },
@@ -124,13 +125,13 @@ A command-line and web-based real-time log inspection tool written in Go.
 #### Client to server
 
 - **`set_filter`:**
-  - Payload: `{ filters: { [property]: [values...] } }`
+  - Payload: `{ action: "set_filter", data: { [property]: [values...] } }`
   - Result: Server responds with `set_logs` (last 1000 logs matching filters).
 
 #### Server to client
 
 - **`set_logs`:**
-  - Payload: `{ logs: [records...] }`
+  - Payload: `{ action: "set_logs", data: [records...] }`
   - Result: Clients removes all log entries from display und displays the given log records
 
 - **`add_logs`:**
@@ -143,7 +144,8 @@ A command-line and web-based real-time log inspection tool written in Go.
     - Payload:
       ```json
       {
-        "index": {
+        "type": "update_index",
+        "payload": {
           "level_name": {
             "ERROR": 3
           }
@@ -152,6 +154,21 @@ A command-line and web-based real-time log inspection tool written in Go.
       ```
     - Result: Client updates the value count
   - **`drop_index`:** Index properties that should be removed.
+    - Payload:
+      ```json
+      {
+        "type": "drop_index",
+        "payload": ["property1", "property2"]
+      }
+      ```
+    - Example:
+      ```json
+      {
+        "type": "drop_index",
+        "payload": ["context.bindings.userId", "level_name"]
+      }
+      ```
+    - Result: Client removes the given filter boxes from display
 
 ---
 
