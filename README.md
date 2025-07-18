@@ -184,6 +184,40 @@ A command-line and web-based real-time log inspection tool written in Go.
 | Values displayed with document count | Infinite scroll-like terminal behavior             |
 | User can select multiple filters     | New logs auto-scroll unless user scrolls up        |
 
+### Filter View
+
+The filter view is the left panel of the turbo-tail frontend UI. Here’s how it works and what it looks like:
+
+- **One filter box per JSON property:**  
+  For every property found in the incoming JSON logs (including nested properties, which are shown in dot notation like `context.bindings.userId`), a filter box is displayed.
+
+- **Values displayed with document count:**  
+  Each filter box lists all the unique values seen for that property, along with a count of how many log entries have that value. For example, under `level_name` you might see:
+  - INFO (12)
+  - ERROR (3)
+
+- **User can select multiple filters:**  
+  - You can select multiple values within a single property (e.g., both INFO and ERROR under `level_name`). This acts as an OR filter for that property.
+  - You can also select filters across different properties (e.g., channel: "testing" and level_name: "ERROR"). This acts as an AND filter across properties.
+
+- **Selected filters are highlighted:**  
+  When you select a filter value, it is visually highlighted to indicate it is active.
+
+- **Filter logic:**  
+  - Multiple values for one property: OR logic (matches any selected value for that property)
+  - Filters across different properties: AND logic (log must match all selected properties)
+
+- **Dynamic updates:**  
+  - As new logs arrive, the filter boxes and their counts update in real time.
+  - If a property is removed from the index (e.g., because it has too many unique values), its filter box disappears.
+
+- **Interaction:**  
+  - When you select or deselect filters, the displayed logs update to show only those matching the current filter selection.
+  - The filter view is always in sync with the current state of the log index.
+
+**Summary:**  
+The filter view is an interactive, real-time panel that lets you quickly narrow down logs by property and value, with intuitive multi-select and live-updating counts, making it easy to focus on relevant log entries.
+
 ### Features
 
 - **On Page Load:**
