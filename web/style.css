@@ -96,6 +96,10 @@ pre .number { color: #268bd2; }
 pre .boolean { color: #cb4b16; }
 pre .null { color: #6c71c4; }
 
+/* Log level highlighting */
+pre .log-level-error { color: #dc322f; font-weight: bold; }
+pre .log-level-warn { color: #cb4b16; font-weight: bold; }
+
 @media (max-width: 700px) {
   #main { flex-direction: column; }
   #filter-panel { width: 100%; border-right: none; border-bottom: 1px solid #93a1a1; }

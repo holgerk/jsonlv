@@ -306,7 +306,18 @@ The log view is the right panel of the turbo-tail frontend UI. It displays the l
   - **Infinite scroll:** The view supports efficient navigation through large numbers of logs, with smooth scrolling behavior.
   - **Filter integration:** The log view updates instantly to reflect the current filter selection from the filter view.
   - **Log replacement:** When filters change, the log view is cleared and repopulated with only the matching logs.
-  - **Highlighting:** Optionally, certain log levels or properties (e.g., errors) may be visually emphasized for quick identification.
+  - **Highlighting:** log levels are visually emphasized (rendered bold) for quick identification:
+    - info
+    - warn
+    - warning
+    - error
+    - critical
+    (uppercase variants of this log level are treated equally)
+    The following colors are applied:
+    - error and critical -> red
+    - warn and warning -> orange
+
+
 
 - **User Experience:**
   The log view is designed for clarity and speed, allowing users to monitor, search, and inspect logs as they stream in. The combination of real-time updates, syntax highlighting, and filter integration makes it easy to focus on relevant log entries and quickly spot issues or patterns.
