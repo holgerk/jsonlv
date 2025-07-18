@@ -184,6 +184,36 @@ A command-line and web-based real-time log inspection tool written in Go.
 | Values displayed with document count | Infinite scroll-like terminal behavior             |
 | User can select multiple filters     | New logs auto-scroll unless user scrolls up        |
 
+### Status View
+
+The status view is part of the top panel in the turbo-tail frontend UI. It provides users with real-time information about the current state of the log streaming and filtering system.
+
+- **Location:**  
+  The status view is located in the top panel of the UI, above the filter and log panels.
+
+- **Purpose:**  
+  The status view provides users with real-time information about the current state of the log streaming and filtering system.
+
+- **Features:**
+  - **Connection Status:**  
+    Indicates whether the frontend is connected to the backend WebSocket (e.g., “Connected”, “Reconnecting”, “Disconnected”).
+  - **Log Stream Status:**  
+    Shows if logs are actively streaming in, paused, or if there is a backlog.
+  - **Log Count:**  
+    Displays the total number of logs currently loaded or visible (e.g., “Showing 1,000 of 10,000 logs”).
+  - **Active Filters:**  
+    Summarizes which filters are currently applied, possibly as a list or a compact summary (e.g., “Filters: level_name=ERROR, channel=testing”).
+  - **Search/Filter Reset:**  
+    May include a button to clear all filters or reset the view to show all logs.
+  - **Other Status Indicators:**  
+    Could include information such as the time of the last received log, backend version, or error/warning messages if something goes wrong.
+
+- **User Experience:**  
+  The status view helps users quickly understand what they are looking at, whether the system is up-to-date, and what filters or search terms are currently affecting the log display.
+
+**Summary:**  
+The status view is a compact, always-visible area at the top of the UI that keeps users informed about connection health, log counts, active filters, and overall system state, ensuring transparency and confidence while inspecting logs in real time.
+
 ### Filter View
 
 The filter view is the left panel of the turbo-tail frontend UI. Here’s how it works and what it looks like:
