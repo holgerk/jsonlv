@@ -1,5 +1,6 @@
 const statusEl = document.getElementById('status');
 const filterPanel = document.getElementById('filter-panel');
+const resizer = document.getElementById('resizer');
 const logPanel = document.getElementById('log-panel');
 
 let ws;
@@ -7,6 +8,8 @@ let reconnectInterval = null;
 let filters = {};
 let index = {};
 let logs = [];
+
+let isResizing = false;
 
 function connectWS() {
   ws = new WebSocket(`ws://${location.host}/ws`);
@@ -125,4 +128,27 @@ function syntaxHighlight(json) {
   });
 }
 
-document.addEventListener('DOMContentLoaded', connectWS); 
+document.addEventListener('DOMContentLoaded', connectWS);
+
+resizer.addEventListener('mousedown', function(e) {
+  isResizing = true;
+  document.body.style.cursor = 'ew-resize';
+});
+
+document.addEventListener('mousemove', function(e) {
+  if (!isResizing) return;
+  const minWidth = 120;
+  const maxWidth = 600;
+  const mainRect = document.getElementById('main').getBoundingClientRect();
+  let newWidth = e.clientX - mainRect.left;
+  if (newWidth < minWidth) newWidth = minWidth;
+  if (newWidth > maxWidth) newWidth = maxWidth;
+  filterPanel.style.width = newWidth + 'px';
+});
+
+document.addEventListener('mouseup', function(e) {
+  if (isResizing) {
+    isResizing = false;
+    document.body.style.cursor = '';
+  }
+}); 

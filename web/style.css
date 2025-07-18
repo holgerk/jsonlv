@@ -26,10 +26,20 @@ body {
 }
 #filter-panel {
   width: 260px;
+  min-width: 120px;
+  max-width: 600px;
   background: #f5eecb;
   border-right: 1px solid #93a1a1;
   padding: 16px 8px;
   overflow-y: auto;
+  transition: width 0.1s;
+}
+#resizer {
+  width: 6px;
+  background: #93a1a1;
+  cursor: ew-resize;
+  user-select: none;
+  z-index: 2;
 }
 #log-panel {
   flex: 1;
