@@ -54,7 +54,7 @@ A command-line and web-based real-time log inspection tool written in Go.
   ```go
   map[propertyKey][propertyValue] -> []uuid
   ```
-  
+
 - **Indexing:**
   - Empty values are ommited
   - Example:
@@ -65,12 +65,12 @@ A command-line and web-based real-time log inspection tool written in Go.
       }
     }
     ```
-    → `context.empty` is not the index because it empty
+    → `context.empty` is not indexed, because the value is empty
   - If one property contains more then 10 different values:
     - the property is removed from index
     - and the property is blacklisted, so that it will skipped in the future
-    - the `index_drop` message to the connected client
-  
+    - the `drop_index` send message to the connected client
+
 
 ---
 
@@ -79,7 +79,7 @@ A command-line and web-based real-time log inspection tool written in Go.
 - **Max Logs Stored:** 10,000 recent JSON documents.
 - **Old Logs:** Dropped when limit is exceeded.
   - dropped logs are removed from index
-  - index update is sent via websocket
+  - index update is sent via websocket (`update_index` message)
 
 ---
 
@@ -96,28 +96,62 @@ A command-line and web-based real-time log inspection tool written in Go.
 
 ### On Client Connect
 
-- `index`: Sends the current (flattened) index with counts.
-- `log_bulk`: Sends last 1000 logs (filtered if applicable).
-
-### Message Types
-
-- **`set_filter`:**
-  - Payload: `{ filters: { [property]: [values...] } }`
-  - Result: Server responds with `log_bulk` (last 1000 logs matching filters).
-
-- **Live Streaming:**
-  - **`log`:** Each new log line broadcast as:
+- **`set_index`:** Sends the current (flattened) index with counts.
+  - Payload:
     ```json
     {
-      "type": "log",
-      "payload": {
-        "uuid": "…",
-        "document": { … }
+      "index": {
+        "channel": {
+          "testing": 1
+        },
+        "context.bindings.userId": {
+          "1020-500555": 1
+        },
+        "level": {
+          "200": 1
+        },
+        "level_name": {
+          "INFO": 1,
+          "ERROR": 2
+        }
       }
     }
     ```
-  - **`index`:** Index updates sent with only changed properties and counts.
-  - **`index_drop`:** Index properties that should be removed.
+- `set_logs`: Sends last 1000 logs (filtered if applicable).
+
+### Message Types
+
+#### Client to server
+
+- **`set_filter`:**
+  - Payload: `{ filters: { [property]: [values...] } }`
+  - Result: Server responds with `set_logs` (last 1000 logs matching filters).
+
+#### Server to client
+
+- **`set_logs`:**
+  - Payload: `{ logs: [records...] }`
+  - Result: Clients removes all log entries from display und displays the given log records
+
+- **`add_logs`:**
+  - Payload: is identical to `set_logs`
+  - Result: Clients adds the given log records to display
+
+- **Live Streaming:**
+  - **`add_logs`:** Each new log line broadcasted
+  - **`update_index`:** Index updates sent with only changed properties and counts.
+    - Payload:
+      ```json
+      {
+        "index": {
+          "level_name": {
+            "ERROR": 3
+          }
+        }
+      }
+      ```
+    - Result: Client updates the value count
+  - **`drop_index`:** Index properties that should be removed.
 
 ---
 
@@ -125,17 +159,19 @@ A command-line and web-based real-time log inspection tool written in Go.
 
 ### Layout
 
-| Left Panel (Filters)                 | Right Panel (Log View)                          |
-|-------------------------------------|-------------------------------------------------|
-| One filter box per JSON property    | Displays last 1000 logs (JSON syntax highlighting) |
-| Values displayed with document count | Infinite scroll-like terminal behavior         |
-| User can select multiple filters     | New logs auto-scroll unless user scrolls up     |
+| Top Panel (Status and Search View)                                                        |
+|--------------------------------------|----------------------------------------------------|
+| Left Panel (Filter View)             | Right Panel (Log View)                             |
+|--------------------------------------|----------------------------------------------------|
+| One filter box per JSON property     | Displays last 1000 logs (JSON syntax highlighting) |
+| Values displayed with document count | Infinite scroll-like terminal behavior             |
+| User can select multiple filters     | New logs auto-scroll unless user scrolls up        |
 
 ### Features
 
 - **On Page Load:**
   - Connects to WebSocket.
-  - Receives initial index and logs.
+  - Receives initial index and logs. (`set_index` and `set_logs`)
 - **Filtering:**
   - Selecting filters updates the displayed logs.
   - Only logs matching selected filters are shown.
@@ -166,7 +202,6 @@ Given input:
   "channel": "testing",
   "context": {
     "bindings": {
-      "templateId": "0815",
       "userId": "1020-500555"
     }
   },
@@ -178,7 +213,6 @@ Given input:
 The following filter boxes appear:
 
 - `channel`
-- `context.bindings.templateId`
 - `context.bindings.userId`
 - `level`
 - `level_name`
