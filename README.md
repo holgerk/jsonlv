@@ -122,16 +122,29 @@ A command-line and web-based real-time log inspection tool written in Go.
 
 ### Message Types
 
+#### Standard Message Format
+
+- Every websocket message is an json object with the properties:
+  - `type` containing the message type
+  - `payload` containing the require data
+- Example:
+  ```json
+  {
+    "type": "<message-type>",
+    "payload": "<data>"
+  }
+  ```
+
 #### Client to server
 
 - **`set_filter`:**
-  - Payload: `{ action: "set_filter", data: { [property]: [values...] } }`
+  - Payload: `{ type: "set_filter", payload: { [property]: [values...] } }`
   - Result: Server responds with `set_logs` (last 1000 logs matching filters).
 
 #### Server to client
 
 - **`set_logs`:**
-  - Payload: `{ action: "set_logs", data: [records...] }`
+  - Payload: `{ type: "set_logs", payload: [records...] }`
   - Result: Clients removes all log entries from display und displays the given log records
 
 - **`add_logs`:**
