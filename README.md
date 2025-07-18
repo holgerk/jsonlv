@@ -102,14 +102,8 @@ A command-line and web-based real-time log inspection tool written in Go.
     {
       "type": "set_index",
       "payload": {
-        "channel": {
-          "testing": 1
-        },
         "context.bindings.userId": {
           "1020-500555": 1
-        },
-        "level": {
-          "200": 1
         },
         "level_name": {
           "INFO": 1,
@@ -147,6 +141,28 @@ A command-line and web-based real-time log inspection tool written in Go.
 
 - **`set_logs`:**
   - Payload: `{ type: "set_logs", payload: [records...] }`
+  - Example: 
+    ```json
+    {
+      "type": "set_logs",
+      "payload": [
+        {
+          "context": {
+            "userId": "1020-500555"
+          },
+          "level": 200,
+          "level_name": "INFO"
+        },
+        {
+          "context": {
+            "userId": "1020-500555"
+          },
+          "level": 200,
+          "level_name": "ERROR"
+        }
+      ]
+    }
+    ```
   - Result: Clients removes all log entries from display und displays the given log records
 
 - **`add_logs`:**
