@@ -248,6 +248,33 @@ The filter view is the left panel of the turbo-tail frontend UI. Here’s how it
 **Summary:**  
 The filter view is an interactive, real-time panel that lets you quickly narrow down logs by property and value, with intuitive multi-select and live-updating counts, making it easy to focus on relevant log entries.
 
+### Log View
+
+The log view is the right panel of the turbo-tail frontend UI. It displays the log entries in real time and provides a user-friendly interface for inspecting log data.
+
+- **Location:**  
+  The log view occupies the right panel of the UI, next to the filter view.
+
+- **Display:**
+  - Shows up to the last 1,000 log entries, each formatted as JSON with syntax highlighting for properties, strings, and numbers.
+  - New logs are appended at the bottom, creating an infinite scroll-like experience similar to a terminal.
+  - If the user scrolls up, new logs do not auto-scroll the view, preserving the user's position.
+  - When filters are applied, only logs matching the selected filters are shown.
+
+- **Features:**
+  - **Real-time streaming:** Logs appear in the view as soon as they are received.
+  - **Syntax highlighting:** JSON properties, strings, and numbers are visually distinguished for easier reading.
+  - **Infinite scroll:** The view supports efficient navigation through large numbers of logs, with smooth scrolling behavior.
+  - **Filter integration:** The log view updates instantly to reflect the current filter selection from the filter view.
+  - **Log replacement:** When filters change, the log view is cleared and repopulated with only the matching logs.
+  - **Highlighting:** Optionally, certain log levels or properties (e.g., errors) may be visually emphasized for quick identification.
+
+- **User Experience:**
+  The log view is designed for clarity and speed, allowing users to monitor, search, and inspect logs as they stream in. The combination of real-time updates, syntax highlighting, and filter integration makes it easy to focus on relevant log entries and quickly spot issues or patterns.
+
+**Summary:**  
+The log view is a dynamic, real-time display of JSON logs, optimized for readability and efficient inspection, tightly integrated with the filter and status views for a seamless log analysis experience.
+
 ### Features
 
 - **On Page Load:**
