@@ -20,6 +20,28 @@ body {
   font-size: 0.9em;
   color: #2aa198;
 }
+
+#controls {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+
+#fullscreen-toggle {
+  background: #eee8d5;
+  border: 1px solid #93a1a1;
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #586e75;
+  transition: background 0.2s, color 0.2s;
+}
+
+#fullscreen-toggle:hover {
+  background: #93a1a1;
+  color: #fdf6e3;
+}
 #main {
   display: flex;
   height: calc(100vh - 48px);

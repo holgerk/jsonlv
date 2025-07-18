@@ -186,4 +186,58 @@ document.addEventListener('mouseup', function(e) {
     isResizing = false;
     document.body.style.cursor = '';
   }
-}); 
+});
+
+function setupFullscreen() {
+  const fullscreenBtn = document.getElementById('fullscreen-toggle');
+  fullscreenBtn.addEventListener('click', toggleFullscreen);
+  
+  // Update button text based on current state
+  document.addEventListener('fullscreenchange', updateFullscreenButton);
+  document.addEventListener('webkitfullscreenchange', updateFullscreenButton);
+  document.addEventListener('mozfullscreenchange', updateFullscreenButton);
+  document.addEventListener('MSFullscreenChange', updateFullscreenButton);
+}
+
+function toggleFullscreen() {
+  if (!document.fullscreenElement && 
+      !document.webkitFullscreenElement && 
+      !document.mozFullScreenElement && 
+      !document.msFullscreenElement) {
+    // Enter fullscreen
+    if (document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen();
+    } else if (document.documentElement.webkitRequestFullscreen) {
+      document.documentElement.webkitRequestFullscreen();
+    } else if (document.documentElement.mozRequestFullScreen) {
+      document.documentElement.mozRequestFullScreen();
+    } else if (document.documentElement.msRequestFullscreen) {
+      document.documentElement.msRequestFullscreen();
+    }
+  } else {
+    // Exit fullscreen
+    if (document.exitFullscreen) {
+      document.exitFullscreen();
+    } else if (document.webkitExitFullscreen) {
+      document.webkitExitFullscreen();
+    } else if (document.mozCancelFullScreen) {
+      document.mozCancelFullScreen();
+    } else if (document.msExitFullscreen) {
+      document.msExitFullscreen();
+    }
+  }
+}
+
+function updateFullscreenButton() {
+  const fullscreenBtn = document.getElementById('fullscreen-toggle');
+  const isFullscreen = !!(document.fullscreenElement || 
+                          document.webkitFullscreenElement || 
+                          document.mozFullScreenElement || 
+                          document.msFullscreenElement);
+  
+  fullscreenBtn.textContent = isFullscreen ? '⛶' : '⛶';
+  fullscreenBtn.title = isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen';
+}
+
+// Initialize fullscreen functionality
+setupFullscreen(); 

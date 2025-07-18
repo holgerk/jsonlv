@@ -244,6 +244,8 @@ The status view is part of the top panel in the turbo-tail frontend UI. It provi
     Summarizes which filters are currently applied, possibly as a list or a compact summary (e.g., “Filters: level_name=ERROR, channel=testing”).
   - **Search/Filter Reset:**  
     May include a button to clear all filters or reset the view to show all logs.
+  - **Fullscreen Toggle:**  
+    A button to toggle fullscreen mode for the entire application, maximizing the log viewing experience.
   - **Other Status Indicators:**  
     Could include information such as the time of the last received log, backend version, or error/warning messages if something goes wrong.
 
