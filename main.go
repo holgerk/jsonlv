@@ -17,6 +17,8 @@ import (
 	"embed"
 	"io/fs"
 
+	"flag"
+
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
@@ -296,13 +298,21 @@ func removeFromIndex(uuid string, flat map[string]interface{}) {
 }
 
 func main() {
+	devMode := flag.Bool("dev", false, "Serve web files from filesystem (for development)")
+	flag.Parse()
+
 	logStore := make(map[string]LogEntry)
 	logOrder := []string{} // maintain insertion order for maxLogs
 	reader := bufio.NewReader(os.Stdin)
 
 	go wsBroadcastLoop()
 
-	http.Handle("/", http.FileServer(http.FS(webFiles)))
+	if *devMode {
+		log.Println("[dev mode] Serving web files from ./web directory")
+		http.Handle("/", http.FileServer(http.Dir("web")))
+	} else {
+		http.Handle("/", http.FileServer(http.FS(webFiles)))
+	}
 	http.HandleFunc("/ws", wsHandler(&logStore, &logOrder))
 	go func() {
 		log.Println("Web server listening on :8080")
