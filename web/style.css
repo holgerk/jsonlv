@@ -1,24 +1,24 @@
 body {
   margin: 0;
   font-family: system-ui, sans-serif;
-  background: #181c20;
-  color: #e0e0e0;
+  background: #fdf6e3;
+  color: #586e75;
 }
 #top-bar {
-  background: #23272c;
-  color: #fff;
+  background: #eee8d5;
+  color: #657b83;
   padding: 12px 24px;
   font-size: 1.2em;
   font-weight: bold;
   letter-spacing: 1px;
   display: flex;
   align-items: center;
-  border-bottom: 1px solid #333;
+  border-bottom: 1px solid #93a1a1;
 }
 #status {
   margin-left: 1em;
   font-size: 0.9em;
-  color: #7fffd4;
+  color: #2aa198;
 }
 #main {
   display: flex;
@@ -26,21 +26,68 @@ body {
 }
 #filter-panel {
   width: 260px;
-  background: #23272c;
-  border-right: 1px solid #333;
+  background: #f5eecb;
+  border-right: 1px solid #93a1a1;
   padding: 16px 8px;
   overflow-y: auto;
 }
 #log-panel {
   flex: 1;
-  background: #181c20;
+  background: #fdf6e3;
   padding: 16px;
   overflow-y: auto;
   font-family: "Fira Mono", "Consolas", "Menlo", monospace;
   font-size: 1em;
 }
+.filter-box {
+  margin-bottom: 1.2em;
+  background: #eee8d5;
+  border-radius: 6px;
+  padding: 8px 6px;
+  box-shadow: 0 1px 2px rgba(101, 123, 131, 0.04);
+}
+.filter-title {
+  font-weight: bold;
+  color: #b58900;
+  margin-bottom: 0.5em;
+}
+.filter-btn {
+  background: #fdf6e3;
+  color: #586e75;
+  border: 1px solid #93a1a1;
+  border-radius: 4px;
+  margin: 2px 4px 2px 0;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 0.95em;
+  transition: background 0.2s, color 0.2s;
+}
+.filter-btn.active {
+  background: #2aa198;
+  color: #fdf6e3;
+  border-color: #268bd2;
+}
+.filter-btn:hover {
+  background: #b58900;
+  color: #fdf6e3;
+}
+pre.log-entry {
+  background: #eee8d5;
+  color: #586e75;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  box-shadow: 0 1px 2px rgba(101, 123, 131, 0.04);
+}
+/* Solarized syntax highlighting */
+pre .key { color: #b58900; }
+pre .string { color: #2aa198; }
+pre .number { color: #268bd2; }
+pre .boolean { color: #cb4b16; }
+pre .null { color: #6c71c4; }
+
 @media (max-width: 700px) {
   #main { flex-direction: column; }
-  #filter-panel { width: 100%; border-right: none; border-bottom: 1px solid #333; }
+  #filter-panel { width: 100%; border-right: none; border-bottom: 1px solid #93a1a1; }
   #log-panel { padding: 8px; }
 } 
