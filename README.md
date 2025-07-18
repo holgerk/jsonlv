@@ -134,10 +134,11 @@ A command-line and web-based real-time log inspection tool written in Go.
 #### Client to server
 
 - **`set_filter`:**
-  - Payload: `{ type: "set_filter", payload: { [property]: [values...] } }`
+  - Payload: `{ type: "set_filter", payload: { [property]: [values...], searchTerm?: string } }`
   - Result: 
-    - Server responds with `set_logs` (last 1000 logs matching filters).
+    - Server responds with `set_logs` (last 1000 logs matching filters and search term).
     - Server stores the actual filter in `actualFilter` property
+  - The `searchTerm` property is optional and contains a string to search for in all log properties
 
 #### Server to client
 
@@ -242,6 +243,8 @@ The status view is part of the top panel in the turbo-tail frontend UI. It provi
     Displays the total number of logs currently loaded or visible (e.g., “Showing 1,000 of 10,000 logs”).
   - **Active Filters:**  
     Summarizes which filters are currently applied, possibly as a list or a compact summary (e.g., “Filters: level_name=ERROR, channel=testing”).
+  - **Search Bar:**  
+    A text input field that allows users to search for specific terms across all log properties. As the user types, it automatically sends search requests to filter logs in real-time.
   - **Search/Filter Reset:**  
     May include a button to clear all filters or reset the view to show all logs.
   - **Fullscreen Toggle:**  

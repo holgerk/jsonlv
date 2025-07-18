@@ -58,8 +58,9 @@ var upgrader = websocket.Upgrader{
 }
 
 type wsClient struct {
-	conn   *websocket.Conn
-	filter map[string][]string
+	conn       *websocket.Conn
+	filter     map[string][]string
+	searchTerm string
 }
 
 var wsClients = make(map[*websocket.Conn]*wsClient)
@@ -151,6 +152,63 @@ func logMatchesFilter(raw map[string]interface{}, filter map[string][]string) bo
 	return true
 }
 
+func logMatchesSearch(raw map[string]interface{}, searchTerm string) bool {
+	if searchTerm == "" {
+		return true
+	}
+	searchTerm = strings.ToLower(searchTerm)
+
+	// Search in flattened structure
+	flat := make(map[string]interface{})
+	flattenMap(raw, "", flat)
+
+	for _, value := range flat {
+		valueStr := toString(value)
+		if strings.Contains(strings.ToLower(valueStr), searchTerm) {
+			return true
+		}
+	}
+	return false
+}
+
+func filterLogsWithSearch(logStore map[string]LogEntry, logOrder []string, payload map[string]interface{}, n int) []map[string]interface{} {
+	// Extract filter and search term from payload
+	filter := make(map[string][]string)
+	searchTerm := ""
+
+	for k, v := range payload {
+		if k == "searchTerm" {
+			if searchStr, ok := v.(string); ok {
+				searchTerm = searchStr
+			}
+		} else {
+			if values, ok := v.([]interface{}); ok {
+				for _, val := range values {
+					if str, ok := val.(string); ok {
+						filter[k] = append(filter[k], str)
+					}
+				}
+			}
+		}
+	}
+
+	result := []map[string]interface{}{}
+	count := 0
+
+	// Start from the end (most recent logs)
+	for i := len(logOrder) - 1; i >= 0 && count < n; i-- {
+		uuid := logOrder[i]
+		if entry, ok := logStore[uuid]; ok {
+			if logMatchesFilter(entry.Raw, filter) && logMatchesSearch(entry.Raw, searchTerm) {
+				result = append([]map[string]interface{}{entry.Raw}, result...)
+				count++
+			}
+		}
+	}
+
+	return result
+}
+
 func wsHandler(logStore *map[string]LogEntry, logOrder *[]string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
@@ -186,17 +244,38 @@ func wsHandler(logStore *map[string]LogEntry, logOrder *[]string) http.HandlerFu
 			}
 			// Handle set_filter
 			var req struct {
-				Type    string              `json:"type"`
-				Payload map[string][]string `json:"payload"`
+				Type    string                 `json:"type"`
+				Payload map[string]interface{} `json:"payload"`
 			}
 			if err := json.Unmarshal(msg, &req); err == nil && req.Type == "set_filter" {
 				wsClientsMu.Lock()
 				if c, ok := wsClients[conn]; ok {
-					c.filter = req.Payload
+					// Extract filter and search term from payload
+					filter := make(map[string][]string)
+					searchTerm := ""
+
+					for k, v := range req.Payload {
+						if k == "searchTerm" {
+							if searchStr, ok := v.(string); ok {
+								searchTerm = searchStr
+							}
+						} else {
+							if values, ok := v.([]interface{}); ok {
+								for _, val := range values {
+									if str, ok := val.(string); ok {
+										filter[k] = append(filter[k], str)
+									}
+								}
+							}
+						}
+					}
+
+					c.filter = filter
+					c.searchTerm = searchTerm
 				}
 				wsClientsMu.Unlock()
 				// Send set_logs with filtered logs
-				filtered := filterLogs(*logStore, *logOrder, req.Payload, 1000)
+				filtered := filterLogsWithSearch(*logStore, *logOrder, req.Payload, 1000)
 				wsSend(conn, map[string]interface{}{
 					"type":    "set_logs",
 					"payload": filtered,
@@ -373,7 +452,7 @@ func main() {
 			// Broadcast add_logs (send only raw log)
 			wsClientsMu.Lock()
 			for _, c := range wsClients {
-				if c.filter == nil || logMatchesFilter(raw, c.filter) {
+				if (c.filter == nil || logMatchesFilter(raw, c.filter)) && logMatchesSearch(raw, c.searchTerm) {
 					wsSend(c.conn, map[string]interface{}{
 						"type":    "add_logs",
 						"payload": []map[string]interface{}{raw},

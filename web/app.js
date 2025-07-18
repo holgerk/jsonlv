@@ -2,10 +2,12 @@ const statusEl = document.getElementById('status');
 const filterPanel = document.getElementById('filter-panel');
 const resizer = document.getElementById('resizer');
 const logPanel = document.getElementById('log-panel');
+const searchInput = document.getElementById('search-input');
 
 let ws;
 let reconnectInterval = null;
 let filters = {};
+let searchTerm = '';
 let index = {};
 let logs = [];
 
@@ -97,7 +99,26 @@ function toggleFilter(btn, key, val) {
     filters[key].splice(idx, 1);
   }
   if (filters[key].length === 0) delete filters[key];
-  ws.send(JSON.stringify({ type: 'set_filter', payload: filters }));
+  sendFilterRequest();
+}
+
+function sendFilterRequest() {
+  const payload = { ...filters };
+  if (searchTerm.trim()) {
+    payload.searchTerm = searchTerm.trim();
+  }
+  ws.send(JSON.stringify({ type: 'set_filter', payload: payload }));
+}
+
+function setupSearch() {
+  let searchTimeout;
+  searchInput.addEventListener('input', (e) => {
+    searchTerm = e.target.value;
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+      sendFilterRequest();
+    }, 300); // Debounce search requests
+  });
 }
 
 function renderLogs() {
@@ -240,4 +261,5 @@ function updateFullscreenButton() {
 }
 
 // Initialize fullscreen functionality
-setupFullscreen(); 
+setupFullscreen();
+setupSearch(); 
