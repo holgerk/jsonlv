@@ -9,13 +9,17 @@ import (
 	"os"
 	"strings"
 
+	"log"
+	"net/http"
+
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 )
 
 type LogEntry struct {
-	UUID   string                 `json:"uuid"`
-	Raw    map[string]interface{} `json:"raw"`
-	Flat   map[string]interface{} `json:"flat"`
+	UUID string                 `json:"uuid"`
+	Raw  map[string]interface{} `json:"raw"`
+	Flat map[string]interface{} `json:"flat"`
 }
 
 // flattenMap flattens a nested map using dot notation
@@ -36,11 +40,51 @@ func flattenMap(data map[string]interface{}, prefix string, out map[string]inter
 
 // Index structure: map[propertyKey][propertyValue][]uuid
 var (
-	index     = make(map[string]map[string][]string)
-	blacklist = make(map[string]bool)
+	index          = make(map[string]map[string][]string)
+	blacklist      = make(map[string]bool)
 	maxIndexValues = 10
-	maxLogs = 10000
+	maxLogs        = 10000
 )
+
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool { return true },
+}
+
+var wsClients = make(map[*websocket.Conn]bool)
+var wsBroadcast = make(chan []byte)
+
+func wsHandler(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("WebSocket upgrade error: %v", err)
+		return
+	}
+	defer conn.Close()
+	wsClients[conn] = true
+	for {
+		_, _, err := conn.ReadMessage()
+		if err != nil {
+			delete(wsClients, conn)
+			break
+		}
+	}
+}
+
+func wsBroadcastLoop() {
+	for msg := range wsBroadcast {
+		for client := range wsClients {
+			if err := client.WriteMessage(websocket.TextMessage, msg); err != nil {
+				client.Close()
+				delete(wsClients, client)
+			}
+		}
+	}
+}
+
+func serveIndex(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html")
+	w.Write([]byte(`<html><body><h1>turbo-tail</h1><p>Web UI coming soon.</p></body></html>`))
+}
 
 func toString(val interface{}) string {
 	switch v := val.(type) {
@@ -118,6 +162,17 @@ func main() {
 	logOrder := []string{} // maintain insertion order for maxLogs
 	reader := bufio.NewReader(os.Stdin)
 
+	go wsBroadcastLoop()
+
+	http.HandleFunc("/", serveIndex)
+	http.HandleFunc("/ws", wsHandler)
+	go func() {
+		log.Println("Web server listening on :8080")
+		if err := http.ListenAndServe(":8080", nil); err != nil {
+			log.Fatalf("Web server error: %v", err)
+		}
+	}()
+
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
@@ -158,4 +213,4 @@ func main() {
 		// else: not JSON, just echo
 	}
 	// TODO: Start web server and websocket logic
-} 
+}
