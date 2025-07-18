@@ -46,10 +46,11 @@ func flattenMap(data map[string]interface{}, prefix string, out map[string]inter
 
 // Index structure: map[propertyKey][propertyValue][]uuid
 var (
-	index          = make(map[string]map[string][]string)
-	blacklist      = make(map[string]bool)
-	maxIndexValues = 10
-	maxLogs        = 10000
+	index               = make(map[string]map[string][]string)
+	blacklist           = make(map[string]bool)
+	maxIndexValues      = 10
+	maxLogs             = 10000
+	maxIndexValueLength = 50 // default, can be overridden by flag
 )
 
 var upgrader = websocket.Upgrader{
@@ -250,6 +251,9 @@ func updateIndex(uuid string, flat map[string]interface{}) {
 		if valStr == "" {
 			continue // omit empty values
 		}
+		if len(valStr) > maxIndexValueLength {
+			continue // omit very long values
+		}
 		if blacklist[k] {
 			continue // skip blacklisted properties
 		}
@@ -275,6 +279,9 @@ func updateIndex(uuid string, flat map[string]interface{}) {
 func removeFromIndex(uuid string, flat map[string]interface{}) {
 	for k, v := range flat {
 		valStr := toString(v)
+		if len(valStr) > maxIndexValueLength {
+			continue // omit very long values
+		}
 		if valMap, ok := index[k]; ok {
 			if uuids, ok := valMap[valStr]; ok {
 				// Remove uuid from slice
@@ -299,6 +306,7 @@ func removeFromIndex(uuid string, flat map[string]interface{}) {
 
 func main() {
 	devMode := flag.Bool("dev", false, "Serve web files from filesystem (for development)")
+	flag.IntVar(&maxIndexValueLength, "maxIndexValueLength", 50, "Maximum length of values to index (omit longer values)")
 	flag.Parse()
 
 	logStore := make(map[string]LogEntry)

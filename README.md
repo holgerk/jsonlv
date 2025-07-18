@@ -66,6 +66,8 @@ A command-line and web-based real-time log inspection tool written in Go.
     }
     ```
     → `context.empty` is not indexed, because the value is empty
+  - Very long values are ommited (longer than 50 chars)
+    - can be configured with --maxIndexValueLength option
   - If one property contains more then 10 different values:
     - the property is removed from index
     - and the property is blacklisted, so that it will skipped in the future
