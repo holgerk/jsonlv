@@ -3,14 +3,29 @@ const filterPanel = document.getElementById('filter-panel');
 const logPanel = document.getElementById('log-panel');
 
 let ws;
+let reconnectInterval = null;
 let filters = {};
 let index = {};
 let logs = [];
 
 function connectWS() {
   ws = new WebSocket(`ws://${location.host}/ws`);
-  ws.onopen = () => setStatus('Connected', 'green');
-  ws.onclose = () => setStatus('Disconnected', 'red');
+  ws.onopen = () => {
+    setStatus('Connected', 'green');
+    if (reconnectInterval) {
+      clearInterval(reconnectInterval);
+      reconnectInterval = null;
+    }
+  };
+  ws.onclose = () => {
+    setStatus('Reconnecting...', 'orange');
+    if (!reconnectInterval) {
+      reconnectInterval = setInterval(() => {
+        setStatus('Reconnecting...', 'orange');
+        connectWS();
+      }, 1000);
+    }
+  };
   ws.onerror = () => setStatus('Error', 'red');
   ws.onmessage = (e) => handleWSMessage(JSON.parse(e.data));
 }
