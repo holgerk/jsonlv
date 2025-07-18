@@ -14,6 +14,9 @@ import (
 
 	"sync"
 
+	"embed"
+	"io/fs"
+
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
@@ -51,7 +54,12 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
-var wsClients = make(map[*websocket.Conn]bool)
+type wsClient struct {
+	conn   *websocket.Conn
+	filter map[string][]string
+}
+
+var wsClients = make(map[*websocket.Conn]*wsClient)
 var wsBroadcast = make(chan []byte)
 var wsClientsMu sync.Mutex
 
@@ -103,6 +111,43 @@ func getLastLogs(logStore map[string]LogEntry, logOrder []string, n int) []map[s
 	return res
 }
 
+func filterLogs(logStore map[string]LogEntry, logOrder []string, filter map[string][]string, n int) []map[string]interface{} {
+	if filter == nil || len(filter) == 0 {
+		return getLastLogs(logStore, logOrder, n)
+	}
+	res := []map[string]interface{}{}
+	for i := len(logOrder) - 1; i >= 0 && len(res) < n; i-- {
+		entry := logStore[logOrder[i]]
+		if logMatchesFilter(entry.Raw, filter) {
+			res = append(res, entry.Raw)
+		}
+	}
+	// reverse to keep order
+	for i, j := 0, len(res)-1; i < j; i, j = i+1, j-1 {
+		res[i], res[j] = res[j], res[i]
+	}
+	return res
+}
+
+func logMatchesFilter(raw map[string]interface{}, filter map[string][]string) bool {
+	flat := make(map[string]interface{})
+	flattenMap(raw, "", flat)
+	for k, vals := range filter {
+		valStr := toString(flat[k])
+		match := false
+		for _, v := range vals {
+			if v == valStr {
+				match = true
+				break
+			}
+		}
+		if !match {
+			return false
+		}
+	}
+	return true
+}
+
 func wsHandler(logStore *map[string]LogEntry, logOrder *[]string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		conn, err := upgrader.Upgrade(w, r, nil)
@@ -112,10 +157,10 @@ func wsHandler(logStore *map[string]LogEntry, logOrder *[]string) http.HandlerFu
 		}
 		defer conn.Close()
 		wsClientsMu.Lock()
-		wsClients[conn] = true
+		wsClients[conn] = &wsClient{conn: conn, filter: nil}
 		wsClientsMu.Unlock()
 
-		// On connect: send set_index and set_logs
+		// On connect: send set_index and set_logs (unfiltered)
 		setIndex := map[string]interface{}{
 			"type":    "set_index",
 			"payload": getIndexCounts(),
@@ -129,12 +174,30 @@ func wsHandler(logStore *map[string]LogEntry, logOrder *[]string) http.HandlerFu
 		wsSend(conn, setLogs)
 
 		for {
-			_, _, err := conn.ReadMessage()
+			_, msg, err := conn.ReadMessage()
 			if err != nil {
 				wsClientsMu.Lock()
 				delete(wsClients, conn)
 				wsClientsMu.Unlock()
 				break
+			}
+			// Handle set_filter
+			var req struct {
+				Type    string              `json:"type"`
+				Payload map[string][]string `json:"payload"`
+			}
+			if err := json.Unmarshal(msg, &req); err == nil && req.Type == "set_filter" {
+				wsClientsMu.Lock()
+				if c, ok := wsClients[conn]; ok {
+					c.filter = req.Payload
+				}
+				wsClientsMu.Unlock()
+				// Send set_logs with filtered logs
+				filtered := filterLogs(*logStore, *logOrder, req.Payload, 1000)
+				wsSend(conn, map[string]interface{}{
+					"type":    "set_logs",
+					"payload": filtered,
+				})
 			}
 		}
 	}
@@ -151,10 +214,10 @@ func wsBroadcastLoop() {
 	}
 }
 
-func serveIndex(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html")
-	w.Write([]byte(`<html><body><h1>turbo-tail</h1><p>Web UI coming soon.</p></body></html>`))
-}
+//go:embed web/index.html web/style.css web/app.js
+var webFS embed.FS
+
+var webFiles, _ = fs.Sub(webFS, "web")
 
 func toString(val interface{}) string {
 	switch v := val.(type) {
@@ -239,7 +302,7 @@ func main() {
 
 	go wsBroadcastLoop()
 
-	http.HandleFunc("/", serveIndex)
+	http.Handle("/", http.FileServer(http.FS(webFiles)))
 	http.HandleFunc("/ws", wsHandler(&logStore, &logOrder))
 	go func() {
 		log.Println("Web server listening on :8080")
@@ -290,10 +353,16 @@ func main() {
 			}
 
 			// Broadcast add_logs (send only raw log)
-			wsBroadcastMsg(map[string]interface{}{
-				"type":    "add_logs",
-				"payload": []map[string]interface{}{raw},
-			})
+			wsClientsMu.Lock()
+			for _, c := range wsClients {
+				if c.filter == nil || logMatchesFilter(raw, c.filter) {
+					wsSend(c.conn, map[string]interface{}{
+						"type":    "add_logs",
+						"payload": []map[string]interface{}{raw},
+					})
+				}
+			}
+			wsClientsMu.Unlock()
 
 			// Broadcast update_index (send full index for now)
 			wsBroadcastMsg(map[string]interface{}{
