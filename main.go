@@ -90,14 +90,16 @@ func getIndexCounts() map[string]map[string]int {
 	return result
 }
 
-func getLastLogs(logStore map[string]LogEntry, logOrder []string, n int) []LogEntry {
-	res := []LogEntry{}
+func getLastLogs(logStore map[string]LogEntry, logOrder []string, n int) []map[string]interface{} {
+	res := []map[string]interface{}{}
 	start := 0
 	if len(logOrder) > n {
 		start = len(logOrder) - n
 	}
 	for _, uuid := range logOrder[start:] {
-		res = append(res, logStore[uuid])
+		if entry, ok := logStore[uuid]; ok {
+			res = append(res, entry.Raw)
+		}
 	}
 	return res
 }
@@ -287,10 +289,10 @@ func main() {
 				}
 			}
 
-			// Broadcast add_logs
+			// Broadcast add_logs (send only raw log)
 			wsBroadcastMsg(map[string]interface{}{
 				"type":    "add_logs",
-				"payload": []LogEntry{logStore[u]},
+				"payload": []map[string]interface{}{raw},
 			})
 
 			// Broadcast update_index (send full index for now)

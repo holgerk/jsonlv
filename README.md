@@ -164,6 +164,10 @@ A command-line and web-based real-time log inspection tool written in Go.
     }
     ```
   - Result: Clients removes all log entries from display und displays the given log records
+  - Implementation Implications:
+      - When sending set_logs or add_logs, the server should send only the original log data 
+        (the Raw field of LogEntry), not the UUID or Flat fields.
+      - The payload should be an array of these raw log objects.
 
 - **`add_logs`:**
   - Payload: is identical to `set_logs`
