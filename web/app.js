@@ -125,21 +125,6 @@ function syntaxHighlight(json) {
   const warnLevels = ['warn', 'warning'];
   const infoLevels = ['info', 'debug', 'trace'];
   
-  for (const level of errorLevels) {
-    const regex = new RegExp(`"${level}"`, 'gi');
-    json = json.replace(regex, `<strong><span class="log-level-error">"${level}"</span></strong>`);
-  }
-  
-  for (const level of warnLevels) {
-    const regex = new RegExp(`"${level}"`, 'gi');
-    json = json.replace(regex, `<strong><span class="log-level-warn">"${level}"</span></strong>`);
-  }
-  
-  for (const level of infoLevels) {
-    const regex = new RegExp(`"${level}"`, 'gi');
-    json = json.replace(regex, `<strong>"${level}"</strong>`);
-  }
-  
   // Then apply standard syntax highlighting
   return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|\d+)/g, function (match) {
     let cls = 'number';
@@ -150,6 +135,29 @@ function syntaxHighlight(json) {
       cls = 'boolean';
     } else if (/null/.test(match)) {
       cls = 'null';
+    }
+    if (cls === 'string') {
+        for (const level of errorLevels) {
+            if (`"${level.toUpperCase()}"` === match || `"${level}"` === match) {
+                cls += ' log-level-error';
+                match = `<strong>${match}</strong>`;
+            }
+        }
+        for (const level of warnLevels) {
+            if (`"${level.toUpperCase()}"` === match || `"${level}"` === match) {
+                cls += ' log-level-warn';
+                match = `<strong>${match}</strong>`;
+            }
+        }
+        for (const level of infoLevels) {
+            if (`"${level.toUpperCase()}"` === match || `"${level}"` === match) {
+                cls += ' log-level-info';
+                match = `<strong>${match}</strong>`;
+            }
+        }
+    }
+    else if (cls === 'key' && match === '"message":') {
+        match = `<strong>${match}</strong>`;
     }
     return `<span class="${cls}">${match}</span>`;
   });
