@@ -101,6 +101,8 @@ function toggleFilter(btn, key, val) {
 }
 
 function renderLogs() {
+  // Check if user is at the bottom before rendering
+  const isAtBottom = logPanel.scrollTop + logPanel.clientHeight >= logPanel.scrollHeight - 5;
   logPanel.innerHTML = '';
   for (const log of logs) {
     const pre = document.createElement('pre');
@@ -108,7 +110,10 @@ function renderLogs() {
     pre.innerHTML = syntaxHighlight(log);
     logPanel.appendChild(pre);
   }
-  logPanel.scrollTop = logPanel.scrollHeight;
+  // Only auto-scroll if user was at the bottom
+  if (isAtBottom) {
+    logPanel.scrollTop = logPanel.scrollHeight;
+  }
 }
 
 function syntaxHighlight(json) {
