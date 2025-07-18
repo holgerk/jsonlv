@@ -139,7 +139,9 @@ A command-line and web-based real-time log inspection tool written in Go.
 
 - **`set_filter`:**
   - Payload: `{ type: "set_filter", payload: { [property]: [values...] } }`
-  - Result: Server responds with `set_logs` (last 1000 logs matching filters).
+  - Result: 
+    - Server responds with `set_logs` (last 1000 logs matching filters).
+    - Server stores the actual filter in `actualFilter` property
 
 #### Server to client
 
@@ -152,7 +154,9 @@ A command-line and web-based real-time log inspection tool written in Go.
   - Result: Clients adds the given log records to display
 
 - **Live Streaming:**
-  - **`add_logs`:** Each new log line broadcasted
+  - **`add_logs`:** 
+    - Each new log line broadcasted
+    - If `actualFilter` is set then the log line is only broadcasted if the filter matches the log line
   - **`update_index`:** Index updates sent with only changed properties and counts.
     - Payload:
       ```json

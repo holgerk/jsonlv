@@ -12,6 +12,8 @@ import (
 	"log"
 	"net/http"
 
+	"sync"
+
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
@@ -52,20 +54,87 @@ var upgrader = websocket.Upgrader{
 
 var wsClients = make(map[*websocket.Conn]bool)
 var wsBroadcast = make(chan []byte)
+var wsClientsMu sync.Mutex
 
-func wsHandler(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
+func wsSend(conn *websocket.Conn, msg interface{}) error {
+	data, err := json.Marshal(msg)
 	if err != nil {
-		log.Printf("WebSocket upgrade error: %v", err)
+		return err
+	}
+	return conn.WriteMessage(websocket.TextMessage, data)
+}
+
+func wsBroadcastMsg(msg interface{}) {
+	data, err := json.Marshal(msg)
+	if err != nil {
 		return
 	}
-	defer conn.Close()
-	wsClients[conn] = true
-	for {
-		_, _, err := conn.ReadMessage()
+	wsClientsMu.Lock()
+	defer wsClientsMu.Unlock()
+	for client := range wsClients {
+		if err := client.WriteMessage(websocket.TextMessage, data); err != nil {
+			client.Close()
+			delete(wsClients, client)
+		}
+	}
+}
+
+func getIndexCounts() map[string]map[string]int {
+	result := make(map[string]map[string]int)
+	for k, valMap := range index {
+		result[k] = make(map[string]int)
+		for v, uuids := range valMap {
+			result[k][v] = len(uuids)
+		}
+	}
+	return result
+}
+
+func getLastLogs(logStore map[string]LogEntry, logOrder []string, n int) []LogEntry {
+	res := []LogEntry{}
+	start := 0
+	if len(logOrder) > n {
+		start = len(logOrder) - n
+	}
+	for _, uuid := range logOrder[start:] {
+		res = append(res, logStore[uuid])
+	}
+	return res
+}
+
+func wsHandler(logStore *map[string]LogEntry, logOrder *[]string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			delete(wsClients, conn)
-			break
+			log.Printf("WebSocket upgrade error: %v", err)
+			return
+		}
+		defer conn.Close()
+		wsClientsMu.Lock()
+		wsClients[conn] = true
+		wsClientsMu.Unlock()
+
+		// On connect: send set_index and set_logs
+		setIndex := map[string]interface{}{
+			"type":    "set_index",
+			"payload": getIndexCounts(),
+		}
+		wsSend(conn, setIndex)
+
+		setLogs := map[string]interface{}{
+			"type":    "set_logs",
+			"payload": getLastLogs(*logStore, *logOrder, 1000),
+		}
+		wsSend(conn, setLogs)
+
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				wsClientsMu.Lock()
+				delete(wsClients, conn)
+				wsClientsMu.Unlock()
+				break
+			}
 		}
 	}
 }
@@ -127,7 +196,12 @@ func updateIndex(uuid string, flat map[string]interface{}) {
 		if len(valMap) > maxIndexValues {
 			delete(index, k)
 			blacklist[k] = true
-			// TODO: Notify websocket clients with drop_index
+			// Notify websocket clients with drop_index
+			dropMsg := map[string]interface{}{
+				"type":    "drop_index",
+				"payload": []string{k},
+			}
+			wsBroadcastMsg(dropMsg)
 		}
 	}
 }
@@ -165,7 +239,7 @@ func main() {
 	go wsBroadcastLoop()
 
 	http.HandleFunc("/", serveIndex)
-	http.HandleFunc("/ws", wsHandler)
+	http.HandleFunc("/ws", wsHandler(&logStore, &logOrder))
 	go func() {
 		log.Println("Web server listening on :8080")
 		if err := http.ListenAndServe(":8080", nil); err != nil {
@@ -205,12 +279,27 @@ func main() {
 				if entry, ok := logStore[oldest]; ok {
 					removeFromIndex(oldest, entry.Flat)
 					delete(logStore, oldest)
-					// TODO: Notify websocket clients with update_index
+					// Notify clients with update_index (send full index for now)
+					wsBroadcastMsg(map[string]interface{}{
+						"type":    "update_index",
+						"payload": getIndexCounts(),
+					})
 				}
 			}
-			// TODO: Notify websocket clients with add_logs/update_index
+
+			// Broadcast add_logs
+			wsBroadcastMsg(map[string]interface{}{
+				"type":    "add_logs",
+				"payload": []LogEntry{logStore[u]},
+			})
+
+			// Broadcast update_index (send full index for now)
+			wsBroadcastMsg(map[string]interface{}{
+				"type":    "update_index",
+				"payload": getIndexCounts(),
+			})
 		}
 		// else: not JSON, just echo
 	}
-	// TODO: Start web server and websocket logic
+	// TODO: Handle drop_index for blacklisted properties
 }
