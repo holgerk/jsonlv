@@ -21,7 +21,6 @@ import (
 type LogEntry struct {
 	UUID string                 `json:"uuid"`
 	Raw  map[string]interface{} `json:"raw"`
-	Flat map[string]interface{} `json:"flat"`
 }
 
 // flattenMap flattens a nested map using dot notation
@@ -269,7 +268,6 @@ func main() {
 			logStore[u] = LogEntry{
 				UUID: u,
 				Raw:  raw,
-				Flat: flat,
 			}
 			logOrder = append(logOrder, u)
 			updateIndex(u, flat)
@@ -279,7 +277,9 @@ func main() {
 				oldest := logOrder[0]
 				logOrder = logOrder[1:]
 				if entry, ok := logStore[oldest]; ok {
-					removeFromIndex(oldest, entry.Flat)
+					flatOld := make(map[string]interface{})
+					flattenMap(entry.Raw, "", flatOld)
+					removeFromIndex(oldest, flatOld)
 					delete(logStore, oldest)
 					// Notify clients with update_index (send full index for now)
 					wsBroadcastMsg(map[string]interface{}{
