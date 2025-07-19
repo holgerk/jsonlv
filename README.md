@@ -134,10 +134,11 @@ A command-line and web-based real-time log inspection tool written in Go.
 #### Client to server
 
 - **`set_filter`:**
-  - Payload: `{ type: "set_filter", payload: { [property]: [values...], searchTerm?: string } }`
+  - Payload: `{ type: "set_filter", payload: { filters: { [property]: [values...] }, searchTerm?: string } }`
   - Result: 
     - Server responds with `set_logs` (last 1000 logs matching filters and search term).
     - Server stores the actual filter in `actualFilter` property
+  - The `filters` property contains the property-based filters
   - The `searchTerm` property is optional and contains a string to search for in all log properties
 
 #### Server to client

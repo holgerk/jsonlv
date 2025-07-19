@@ -158,12 +158,14 @@ func filterLogsWithSearch(logStore map[string]LogEntry, logOrder []string, paylo
 	filter := make(map[string][]string)
 	searchTerm := ""
 
-	for k, v := range payload {
-		if k == "searchTerm" {
-			if searchStr, ok := v.(string); ok {
-				searchTerm = searchStr
-			}
-		} else {
+	// Extract searchTerm
+	if searchStr, ok := payload["searchTerm"].(string); ok {
+		searchTerm = searchStr
+	}
+
+	// Extract filters
+	if filtersMap, ok := payload["filters"].(map[string]interface{}); ok {
+		for k, v := range filtersMap {
 			if values, ok := v.([]interface{}); ok {
 				for _, val := range values {
 					if str, ok := val.(string); ok {
@@ -236,12 +238,14 @@ func wsHandler(logStore *map[string]LogEntry, logOrder *[]string) http.HandlerFu
 					filter := make(map[string][]string)
 					searchTerm := ""
 
-					for k, v := range req.Payload {
-						if k == "searchTerm" {
-							if searchStr, ok := v.(string); ok {
-								searchTerm = searchStr
-							}
-						} else {
+					// Extract searchTerm
+					if searchStr, ok := req.Payload["searchTerm"].(string); ok {
+						searchTerm = searchStr
+					}
+
+					// Extract filters
+					if filtersMap, ok := req.Payload["filters"].(map[string]interface{}); ok {
+						for k, v := range filtersMap {
 							if values, ok := v.([]interface{}); ok {
 								for _, val := range values {
 									if str, ok := val.(string); ok {
@@ -451,5 +455,4 @@ func main() {
 		}
 		// else: not JSON, just echo
 	}
-	// TODO: Handle drop_index for blacklisted properties
 }

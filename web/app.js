@@ -103,7 +103,7 @@ function toggleFilter(btn, key, val) {
 }
 
 function sendFilterRequest() {
-  const payload = { ...filters };
+  const payload = { filters: { ...filters } };
   if (searchTerm.trim()) {
     payload.searchTerm = searchTerm.trim();
   }

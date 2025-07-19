@@ -2,11 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 )
 
 func TestIndexCreation(t *testing.T) {
-	// Reset global state
 	index = make(map[string]map[string][]string)
 	blacklist = make(map[string]bool)
 	maxIndexValues = 2 // lower for test
@@ -17,28 +17,332 @@ func TestIndexCreation(t *testing.T) {
 		`{"level": "DEBUG", "user": "carol"}`,
 	}
 
-	for _, line := range entries {
+	for _, entry := range entries {
 		var raw map[string]interface{}
-		if err := json.Unmarshal([]byte(line), &raw); err != nil {
-			t.Fatalf("Failed to unmarshal: %v", err)
+		if err := json.Unmarshal([]byte(entry), &raw); err != nil {
+			t.Fatalf("Failed to parse JSON: %v", err)
 		}
-		uuid := line // use line as fake uuid for test
+		u := "test-uuid-" + entry
 		flat := make(map[string]interface{})
 		flattenMap(raw, "", flat)
-		updateIndex(uuid, flat)
+		updateIndex(u, flat)
 	}
 
-	// Check index and blacklist
+	// 'level' should be blacklisted (3 unique values > maxIndexValues=2)
 	if _, ok := index["level"]; ok {
-		t.Errorf("Expected 'level' to be blacklisted and removed from index")
+		t.Errorf("Expected 'level' to be blacklisted")
 	}
 	if !blacklist["level"] {
 		t.Errorf("Expected 'level' to be blacklisted")
 	}
-	if _, ok := index["user"]; !ok {
-		t.Errorf("Expected 'user' to be in index")
-	}
+
+	// 'user' should be in index with 2 unique values
 	if len(index["user"]) != 2 {
 		t.Errorf("Expected 2 unique users in index, got %d", len(index["user"]))
+	}
+}
+
+func TestSetFilterMessage(t *testing.T) {
+	// Reset global state
+	index = make(map[string]map[string][]string)
+	blacklist = make(map[string]bool)
+	maxIndexValues = 10
+
+	// Create test log store
+	logStore := make(map[string]LogEntry)
+	logOrder := []string{}
+
+	// Add some test logs
+	testLogs := []string{
+		`{"level": "INFO", "message": "test message 1", "user": "alice"}`,
+		`{"level": "ERROR", "message": "test message 2", "user": "bob"}`,
+		`{"level": "WARN", "message": "test message 3", "user": "alice"}`,
+		`{"level": "INFO", "message": "another message", "user": "charlie"}`,
+	}
+
+	for i, logStr := range testLogs {
+		var raw map[string]interface{}
+		if err := json.Unmarshal([]byte(logStr), &raw); err != nil {
+			t.Fatalf("Failed to parse JSON: %v", err)
+		}
+		u := fmt.Sprintf("test-uuid-%d", i)
+		flat := make(map[string]interface{})
+		flattenMap(raw, "", flat)
+		logStore[u] = LogEntry{UUID: u, Raw: raw}
+		logOrder = append(logOrder, u)
+		updateIndex(u, flat)
+	}
+
+	// Test 1: Filter by level
+	t.Run("Filter by level", func(t *testing.T) {
+		payload := map[string]interface{}{
+			"filters": map[string]interface{}{
+				"level": []interface{}{"INFO"},
+			},
+		}
+		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
+		if len(result) != 2 {
+			t.Errorf("Expected 2 logs with level INFO, got %d", len(result))
+		}
+		for _, log := range result {
+			if log["level"] != "INFO" {
+				t.Errorf("Expected level INFO, got %v", log["level"])
+			}
+		}
+	})
+
+	// Test 2: Filter by user
+	t.Run("Filter by user", func(t *testing.T) {
+		payload := map[string]interface{}{
+			"filters": map[string]interface{}{
+				"user": []interface{}{"alice"},
+			},
+		}
+		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
+		if len(result) != 2 {
+			t.Errorf("Expected 2 logs with user alice, got %d", len(result))
+		}
+		for _, log := range result {
+			if log["user"] != "alice" {
+				t.Errorf("Expected user alice, got %v", log["user"])
+			}
+		}
+	})
+
+	// Test 3: Multiple filters (AND logic)
+	t.Run("Multiple filters", func(t *testing.T) {
+		payload := map[string]interface{}{
+			"filters": map[string]interface{}{
+				"level": []interface{}{"INFO"},
+				"user":  []interface{}{"alice"},
+			},
+		}
+		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
+		if len(result) != 1 {
+			t.Errorf("Expected 1 log with level INFO and user alice, got %d", len(result))
+		}
+		log := result[0]
+		if log["level"] != "INFO" || log["user"] != "alice" {
+			t.Errorf("Expected level INFO and user alice, got level=%v user=%v", log["level"], log["user"])
+		}
+	})
+
+	// Test 4: Multiple values for same property (OR logic)
+	t.Run("Multiple values for same property", func(t *testing.T) {
+		payload := map[string]interface{}{
+			"filters": map[string]interface{}{
+				"level": []interface{}{"INFO", "ERROR"},
+			},
+		}
+		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
+		if len(result) != 3 {
+			t.Errorf("Expected 3 logs with level INFO or ERROR, got %d", len(result))
+		}
+		for _, log := range result {
+			level := log["level"].(string)
+			if level != "INFO" && level != "ERROR" {
+				t.Errorf("Expected level INFO or ERROR, got %v", level)
+			}
+		}
+	})
+
+	// Test 5: Search term
+	t.Run("Search term", func(t *testing.T) {
+		payload := map[string]interface{}{
+			"searchTerm": "message",
+		}
+		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
+		if len(result) != 4 {
+			t.Errorf("Expected 4 logs containing 'message', got %d", len(result))
+		}
+	})
+
+	// Test 6: Search term with filter
+	t.Run("Search term with filter", func(t *testing.T) {
+		payload := map[string]interface{}{
+			"filters": map[string]interface{}{
+				"level":      []interface{}{"INFO"},
+				"searchTerm": "message",
+			},
+		}
+		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
+		if len(result) != 2 {
+			t.Errorf("Expected 2 logs with level INFO containing 'message', got %d", len(result))
+		}
+		for _, log := range result {
+			if log["level"] != "INFO" {
+				t.Errorf("Expected level INFO, got %v", log["level"])
+			}
+		}
+	})
+
+	// Test 7: No filters (should return all logs)
+	t.Run("No filters", func(t *testing.T) {
+		payload := map[string]interface{}{}
+		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
+		if len(result) != 4 {
+			t.Errorf("Expected 4 logs with no filters, got %d", len(result))
+		}
+	})
+
+	// Test 8: Empty search term (should return all logs)
+	t.Run("Empty search term", func(t *testing.T) {
+		payload := map[string]interface{}{
+			"searchTerm": "",
+		}
+		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
+		if len(result) != 4 {
+			t.Errorf("Expected 4 logs with empty search term, got %d", len(result))
+		}
+	})
+
+	// Test 9: Non-existent filter (should return no logs)
+	t.Run("Non-existent filter", func(t *testing.T) {
+		payload := map[string]interface{}{
+			"filters": map[string]interface{}{
+				"level": []interface{}{"NONEXISTENT"},
+			},
+		}
+		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
+		if len(result) != 0 {
+			t.Errorf("Expected 0 logs with non-existent level, got %d", len(result))
+		}
+	})
+
+	// Test 10: Non-existent search term (should return no logs)
+	t.Run("Non-existent search term", func(t *testing.T) {
+		payload := map[string]interface{}{
+			"searchTerm": "nonexistent",
+		}
+		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
+		if len(result) != 0 {
+			t.Errorf("Expected 0 logs with non-existent search term, got %d", len(result))
+		}
+	})
+}
+
+func TestLogMatchesFilter(t *testing.T) {
+	// Test log
+	log := map[string]interface{}{
+		"level":   "INFO",
+		"message": "test message",
+		"user":    "alice",
+		"context": map[string]interface{}{
+			"requestId": "123",
+		},
+	}
+
+	tests := []struct {
+		name     string
+		filter   map[string][]string
+		expected bool
+	}{
+		{
+			name:     "No filter",
+			filter:   map[string][]string{},
+			expected: true,
+		},
+		{
+			name:     "Match single value",
+			filter:   map[string][]string{"level": {"INFO"}},
+			expected: true,
+		},
+		{
+			name:     "Match multiple values (OR)",
+			filter:   map[string][]string{"level": {"INFO", "ERROR"}},
+			expected: true,
+		},
+		{
+			name:     "No match",
+			filter:   map[string][]string{"level": {"ERROR"}},
+			expected: false,
+		},
+		{
+			name:     "Match nested property",
+			filter:   map[string][]string{"context.requestId": {"123"}},
+			expected: true,
+		},
+		{
+			name:     "Multiple properties (AND)",
+			filter:   map[string][]string{"level": {"INFO"}, "user": {"alice"}},
+			expected: true,
+		},
+		{
+			name:     "Multiple properties no match",
+			filter:   map[string][]string{"level": {"INFO"}, "user": {"bob"}},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := logMatchesFilter(log, tt.filter)
+			if result != tt.expected {
+				t.Errorf("Expected %v, got %v", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestLogMatchesSearch(t *testing.T) {
+	// Test log
+	log := map[string]interface{}{
+		"level":   "INFO",
+		"message": "test message",
+		"user":    "alice",
+		"context": map[string]interface{}{
+			"requestId": "123",
+		},
+	}
+
+	tests := []struct {
+		name       string
+		searchTerm string
+		expected   bool
+	}{
+		{
+			name:       "Empty search term",
+			searchTerm: "",
+			expected:   true,
+		},
+		{
+			name:       "Match in level",
+			searchTerm: "INFO",
+			expected:   true,
+		},
+		{
+			name:       "Match in message",
+			searchTerm: "test",
+			expected:   true,
+		},
+		{
+			name:       "Match in nested property",
+			searchTerm: "123",
+			expected:   true,
+		},
+		{
+			name:       "Case insensitive match",
+			searchTerm: "info",
+			expected:   true,
+		},
+		{
+			name:       "No match",
+			searchTerm: "nonexistent",
+			expected:   false,
+		},
+		{
+			name:       "Partial match",
+			searchTerm: "mess",
+			expected:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := logMatchesSearch(log, tt.searchTerm)
+			if result != tt.expected {
+				t.Errorf("Expected %v, got %v", tt.expected, result)
+			}
+		})
 	}
 }
