@@ -3,6 +3,7 @@ const filterPanel = document.getElementById('filter-panel');
 const resizer = document.getElementById('resizer');
 const logPanel = document.getElementById('log-panel');
 const searchInput = document.getElementById('search-input');
+const searchClear = document.getElementById('search-clear');
 
 let ws;
 let reconnectInterval = null;
@@ -107,159 +108,174 @@ function sendFilterRequest() {
   if (searchTerm.trim()) {
     payload.searchTerm = searchTerm.trim();
   }
-  ws.send(JSON.stringify({ type: 'set_filter', payload: payload }));
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'set_filter', payload: payload }));
+  }
 }
 
 function setupSearch() {
   let searchTimeout;
   searchInput.addEventListener('input', (e) => {
     searchTerm = e.target.value;
+    updateClearButton();
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
       sendFilterRequest();
     }, 300); // Debounce search requests
   });
+
+  // Clear button functionality
+  searchClear.addEventListener('click', () => {
+    searchInput.value = '';
+    searchTerm = '';
+    updateClearButton();
+    sendFilterRequest();
+  });
+}
+
+function updateClearButton() {
+  if (searchTerm.trim()) {
+    searchClear.classList.add('visible');
+  } else {
+    searchClear.classList.remove('visible');
+  }
+}
+
+function setupFullscreen() {
+  const fullscreenToggle = document.getElementById('fullscreen-toggle');
+  fullscreenToggle.addEventListener('click', () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(err => {
+        console.log(`Error attempting to enable fullscreen: ${err.message}`);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  });
 }
 
 function renderLogs() {
   // Check if user is at the bottom before rendering
-  const isAtBottom = logPanel.scrollTop + logPanel.clientHeight >= logPanel.scrollHeight - 5;
+  const isAtBottom = logPanel.scrollTop + logPanel.clientHeight >= logPanel.scrollHeight - 10;
+  
   logPanel.innerHTML = '';
-  for (const log of logs) {
-    const pre = document.createElement('pre');
-    pre.className = 'log-entry';
-    pre.innerHTML = syntaxHighlight(log);
-    logPanel.appendChild(pre);
-  }
-  // Only auto-scroll if user was at the bottom
+  
+  logs.forEach(log => {
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    
+    // Determine log level and add appropriate class
+    const level = getLogLevel(log);
+    if (level) {
+      entry.classList.add(level.toLowerCase());
+    }
+    
+    // Format timestamp if present
+    let timestamp = '';
+    if (log.timestamp) {
+      timestamp = `<div class="timestamp">${new Date(log.timestamp).toISOString()}</div>`;
+    }
+    
+    // Format level if present
+    let levelDisplay = '';
+    if (log.level || log.level_name) {
+      const levelValue = log.level_name || log.level;
+      levelDisplay = `<span class="level">${levelValue}</span>`;
+    }
+    
+    // Format message if present
+    let message = '';
+    if (log.message) {
+      message = `<div class="message">${escapeHtml(log.message)}</div>`;
+    }
+    
+    // Format other properties
+    const properties = Object.keys(log)
+      .filter(key => !['timestamp', 'level', 'level_name', 'message'].includes(key))
+      .map(key => {
+        const value = log[key];
+        const valueClass = getValueClass(value);
+        const formattedValue = formatValue(value);
+        return `<div class="property">
+          <span class="property-name">${escapeHtml(key)}:</span>
+          <span class="property-value ${valueClass}">${formattedValue}</span>
+        </div>`;
+      })
+      .join('');
+    
+    const propertiesDisplay = properties ? `<div class="properties">${properties}</div>` : '';
+    
+    entry.innerHTML = `
+      ${timestamp}
+      ${levelDisplay}
+      ${message}
+      ${propertiesDisplay}
+    `;
+    
+    logPanel.appendChild(entry);
+  });
+  
+  // Auto-scroll to bottom if user was at bottom before
   if (isAtBottom) {
     logPanel.scrollTop = logPanel.scrollHeight;
   }
 }
 
-function syntaxHighlight(json) {
-  if (typeof json != 'string') json = JSON.stringify(json, null, 2);
-  json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  
-  // First, highlight log levels with colors and bold (case-insensitive)
-  const errorLevels = ['error', 'critical'];
-  const warnLevels = ['warn', 'warning'];
-  const infoLevels = ['info', 'debug', 'trace'];
-  
-  // Then apply standard syntax highlighting
-  return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|\d+)/g, function (match) {
-    let cls = 'number';
-    if (/^"/.test(match)) {
-      if (/:$/.test(match)) cls = 'key';
-      else cls = 'string';
-    } else if (/true|false/.test(match)) {
-      cls = 'boolean';
-    } else if (/null/.test(match)) {
-      cls = 'null';
+function getLogLevel(log) {
+  const level = (log.level_name || log.level || '').toString().toLowerCase();
+  if (['error', 'critical'].includes(level)) return 'error';
+  if (['warn', 'warning'].includes(level)) return 'warn';
+  if (['info', 'information'].includes(level)) return 'info';
+  if (['debug'].includes(level)) return 'debug';
+  return null;
+}
+
+function getValueClass(value) {
+  if (typeof value === 'string') return 'string';
+  if (typeof value === 'number') return 'number';
+  if (typeof value === 'boolean') return 'boolean';
+  if (value === null || value === undefined) return 'null';
+  return '';
+}
+
+function formatValue(value) {
+  if (value === null || value === undefined) return 'null';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return escapeHtml(value.toString());
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function setupResizer() {
+  resizer.addEventListener('mousedown', (e) => {
+    isResizing = true;
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+    
+    const newWidth = e.clientX - filterPanel.offsetLeft;
+    const minWidth = 120;
+    const maxWidth = 600;
+    
+    if (newWidth >= minWidth && newWidth <= maxWidth) {
+      filterPanel.style.width = newWidth + 'px';
     }
-    if (cls === 'string') {
-        for (const level of errorLevels) {
-            if (`"${level.toUpperCase()}"` === match || `"${level}"` === match) {
-                cls += ' log-level-error';
-                match = `<strong>${match}</strong>`;
-            }
-        }
-        for (const level of warnLevels) {
-            if (`"${level.toUpperCase()}"` === match || `"${level}"` === match) {
-                cls += ' log-level-warn';
-                match = `<strong>${match}</strong>`;
-            }
-        }
-        for (const level of infoLevels) {
-            if (`"${level.toUpperCase()}"` === match || `"${level}"` === match) {
-                cls += ' log-level-info';
-                match = `<strong>${match}</strong>`;
-            }
-        }
-    }
-    else if (cls === 'key' && match === '"message":') {
-        match = `<strong>${match}</strong>`;
-    }
-    return `<span class="${cls}">${match}</span>`;
+  });
+
+  document.addEventListener('mouseup', () => {
+    isResizing = false;
   });
 }
 
-document.addEventListener('DOMContentLoaded', connectWS);
-
-resizer.addEventListener('mousedown', function(e) {
-  isResizing = true;
-  document.body.style.cursor = 'ew-resize';
-});
-
-document.addEventListener('mousemove', function(e) {
-  if (!isResizing) return;
-  const minWidth = 120;
-  const maxWidth = 600;
-  const mainRect = document.getElementById('main').getBoundingClientRect();
-  let newWidth = e.clientX - mainRect.left;
-  if (newWidth < minWidth) newWidth = minWidth;
-  if (newWidth > maxWidth) newWidth = maxWidth;
-  filterPanel.style.width = newWidth + 'px';
-});
-
-document.addEventListener('mouseup', function(e) {
-  if (isResizing) {
-    isResizing = false;
-    document.body.style.cursor = '';
-  }
-});
-
-function setupFullscreen() {
-  const fullscreenBtn = document.getElementById('fullscreen-toggle');
-  fullscreenBtn.addEventListener('click', toggleFullscreen);
-  
-  // Update button text based on current state
-  document.addEventListener('fullscreenchange', updateFullscreenButton);
-  document.addEventListener('webkitfullscreenchange', updateFullscreenButton);
-  document.addEventListener('mozfullscreenchange', updateFullscreenButton);
-  document.addEventListener('MSFullscreenChange', updateFullscreenButton);
-}
-
-function toggleFullscreen() {
-  if (!document.fullscreenElement && 
-      !document.webkitFullscreenElement && 
-      !document.mozFullScreenElement && 
-      !document.msFullscreenElement) {
-    // Enter fullscreen
-    if (document.documentElement.requestFullscreen) {
-      document.documentElement.requestFullscreen();
-    } else if (document.documentElement.webkitRequestFullscreen) {
-      document.documentElement.webkitRequestFullscreen();
-    } else if (document.documentElement.mozRequestFullScreen) {
-      document.documentElement.mozRequestFullScreen();
-    } else if (document.documentElement.msRequestFullscreen) {
-      document.documentElement.msRequestFullscreen();
-    }
-  } else {
-    // Exit fullscreen
-    if (document.exitFullscreen) {
-      document.exitFullscreen();
-    } else if (document.webkitExitFullscreen) {
-      document.webkitExitFullscreen();
-    } else if (document.mozCancelFullScreen) {
-      document.mozCancelFullScreen();
-    } else if (document.msExitFullscreen) {
-      document.msExitFullscreen();
-    }
-  }
-}
-
-function updateFullscreenButton() {
-  const fullscreenBtn = document.getElementById('fullscreen-toggle');
-  const isFullscreen = !!(document.fullscreenElement || 
-                          document.webkitFullscreenElement || 
-                          document.mozFullScreenElement || 
-                          document.msFullscreenElement);
-  
-  fullscreenBtn.textContent = isFullscreen ? '⛶' : '⛶';
-  fullscreenBtn.title = isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen';
-}
-
-// Initialize fullscreen functionality
+// Initialize
+connectWS();
+setupSearch();
 setupFullscreen();
-setupSearch(); 
+setupResizer();
+updateClearButton(); 
