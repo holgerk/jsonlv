@@ -1,14 +1,18 @@
 const statusEl = document.getElementById('status');
 const filterPanel = document.getElementById('filter-panel');
+const filterContent = document.getElementById('filter-content');
 const resizer = document.getElementById('resizer');
 const logPanel = document.getElementById('log-panel');
 const searchInput = document.getElementById('search-input');
 const searchClear = document.getElementById('search-clear');
+const filterSearchInput = document.getElementById('filter-search-input');
+const filterSearchClear = document.getElementById('filter-search-clear');
 
 let ws;
 let reconnectInterval = null;
 let filters = {};
 let searchTerm = '';
+let filterSearchTerm = '';
 let index = {};
 let logs = [];
 
@@ -68,8 +72,15 @@ function handleWSMessage(msg) {
 }
 
 function renderFilters() {
-  filterPanel.innerHTML = '';
-  for (const key in index) {
+  filterContent.innerHTML = '';
+  
+  // Filter the index keys based on filterSearchTerm
+  const filteredKeys = Object.keys(index).filter(key => {
+    if (!filterSearchTerm.trim()) return true;
+    return key.toLowerCase().includes(filterSearchTerm.toLowerCase());
+  });
+  
+  for (const key of filteredKeys) {
     const box = document.createElement('div');
     box.className = 'filter-box';
     const title = document.createElement('div');
@@ -85,7 +96,7 @@ function renderFilters() {
       btn.onclick = function () { toggleFilter(this, key, val); };
       box.appendChild(btn);
     }
-    filterPanel.appendChild(box);
+    filterContent.appendChild(box);
   }
 }
 
@@ -133,11 +144,35 @@ function setupSearch() {
   });
 }
 
+function setupFilterSearch() {
+  filterSearchInput.addEventListener('input', (e) => {
+    filterSearchTerm = e.target.value;
+    updateFilterClearButton();
+    renderFilters();
+  });
+
+  // Clear button functionality for filter search
+  filterSearchClear.addEventListener('click', () => {
+    filterSearchInput.value = '';
+    filterSearchTerm = '';
+    updateFilterClearButton();
+    renderFilters();
+  });
+}
+
 function updateClearButton() {
   if (searchTerm.trim()) {
     searchClear.classList.add('visible');
   } else {
     searchClear.classList.remove('visible');
+  }
+}
+
+function updateFilterClearButton() {
+  if (filterSearchTerm.trim()) {
+    filterSearchClear.classList.add('visible');
+  } else {
+    filterSearchClear.classList.remove('visible');
   }
 }
 
@@ -276,6 +311,8 @@ function setupResizer() {
 // Initialize
 connectWS();
 setupSearch();
+setupFilterSearch();
 setupFullscreen();
 setupResizer();
-updateClearButton(); 
+updateClearButton();
+updateFilterClearButton(); 
