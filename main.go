@@ -115,24 +115,6 @@ func getLastLogs(logStore map[string]LogEntry, logOrder []string, n int) []map[s
 	return res
 }
 
-func filterLogs(logStore map[string]LogEntry, logOrder []string, filter map[string][]string, n int) []map[string]interface{} {
-	if filter == nil || len(filter) == 0 {
-		return getLastLogs(logStore, logOrder, n)
-	}
-	res := []map[string]interface{}{}
-	for i := len(logOrder) - 1; i >= 0 && len(res) < n; i-- {
-		entry := logStore[logOrder[i]]
-		if logMatchesFilter(entry.Raw, filter) {
-			res = append(res, entry.Raw)
-		}
-	}
-	// reverse to keep order
-	for i, j := 0, len(res)-1; i < j; i, j = i+1, j-1 {
-		res[i], res[j] = res[j], res[i]
-	}
-	return res
-}
-
 func logMatchesFilter(raw map[string]interface{}, filter map[string][]string) bool {
 	flat := make(map[string]interface{})
 	flattenMap(raw, "", flat)
