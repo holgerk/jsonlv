@@ -2,12 +2,12 @@
 package main
 
 import (
-	"slices"
 	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"log"
@@ -25,7 +25,7 @@ import (
 )
 
 type LogEntry struct {
-	UUID string                 `json:"uuid"`
+	UUID string         `json:"uuid"`
 	Raw  map[string]any `json:"raw"`
 }
 
@@ -223,7 +223,7 @@ func wsHandler(logStore *map[string]LogEntry, logOrder *[]string) http.HandlerFu
 			}
 			// Handle set_filter
 			var req struct {
-				Type    string                 `json:"type"`
+				Type    string         `json:"type"`
 				Payload map[string]any `json:"payload"`
 			}
 			if err := json.Unmarshal(msg, &req); err == nil && req.Type == "set_filter" {
@@ -268,12 +268,14 @@ func wsHandler(logStore *map[string]LogEntry, logOrder *[]string) http.HandlerFu
 
 func wsBroadcastLoop() {
 	for msg := range wsBroadcast {
+		wsClientsMu.Lock()
 		for client := range wsClients {
 			if err := client.WriteMessage(websocket.TextMessage, msg); err != nil {
 				client.Close()
 				delete(wsClients, client)
 			}
 		}
+		wsClientsMu.Unlock()
 	}
 }
 
