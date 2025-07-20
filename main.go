@@ -29,6 +29,11 @@ type LogEntry struct {
 	Raw  map[string]any `json:"raw"`
 }
 
+type SetFilterPayload struct {
+	SearchTerm string              `json:"searchTerm"`
+	Filters    map[string][]string `json:"filters"`
+}
+
 // flattenMap flattens a nested map using dot notation
 func flattenMap(data map[string]any, prefix string, out map[string]any) {
 	for k, v := range data {
@@ -148,29 +153,7 @@ func logMatchesSearch(raw map[string]any, searchTerm string) bool {
 	return false
 }
 
-func filterLogsWithSearch(logStore map[string]LogEntry, logOrder []string, payload map[string]any, n int) []map[string]any {
-	// Extract filter and search term from payload
-	filter := make(map[string][]string)
-	searchTerm := ""
-
-	// Extract searchTerm
-	if searchStr, ok := payload["searchTerm"].(string); ok {
-		searchTerm = searchStr
-	}
-
-	// Extract filters
-	if filtersMap, ok := payload["filters"].(map[string]any); ok {
-		for k, v := range filtersMap {
-			if values, ok := v.([]any); ok {
-				for _, val := range values {
-					if str, ok := val.(string); ok {
-						filter[k] = append(filter[k], str)
-					}
-				}
-			}
-		}
-	}
-
+func filterLogsWithSearch(logStore map[string]LogEntry, logOrder []string, payload SetFilterPayload, n int) []map[string]any {
 	result := []map[string]any{}
 	count := 0
 
@@ -178,7 +161,7 @@ func filterLogsWithSearch(logStore map[string]LogEntry, logOrder []string, paylo
 	for i := len(logOrder) - 1; i >= 0 && count < n; i-- {
 		uuid := logOrder[i]
 		if entry, ok := logStore[uuid]; ok {
-			if logMatchesFilter(entry.Raw, filter) && logMatchesSearch(entry.Raw, searchTerm) {
+			if logMatchesFilter(entry.Raw, payload.Filters) && logMatchesSearch(entry.Raw, payload.SearchTerm) {
 				result = append([]map[string]any{entry.Raw}, result...)
 				count++
 			}
@@ -223,36 +206,14 @@ func wsHandler(logStore *map[string]LogEntry, logOrder *[]string) http.HandlerFu
 			}
 			// Handle set_filter
 			var req struct {
-				Type    string         `json:"type"`
-				Payload map[string]any `json:"payload"`
+				Type    string           `json:"type"`
+				Payload SetFilterPayload `json:"payload"`
 			}
 			if err := json.Unmarshal(msg, &req); err == nil && req.Type == "set_filter" {
 				wsClientsMu.Lock()
 				if c, ok := wsClients[conn]; ok {
-					// Extract filter and search term from payload
-					filter := make(map[string][]string)
-					searchTerm := ""
-
-					// Extract searchTerm
-					if searchStr, ok := req.Payload["searchTerm"].(string); ok {
-						searchTerm = searchStr
-					}
-
-					// Extract filters
-					if filtersMap, ok := req.Payload["filters"].(map[string]any); ok {
-						for k, v := range filtersMap {
-							if values, ok := v.([]any); ok {
-								for _, val := range values {
-									if str, ok := val.(string); ok {
-										filter[k] = append(filter[k], str)
-									}
-								}
-							}
-						}
-					}
-
-					c.filter = filter
-					c.searchTerm = searchTerm
+					c.filter = req.Payload.Filters
+					c.searchTerm = req.Payload.SearchTerm
 				}
 				wsClientsMu.Unlock()
 				// Send set_logs with filtered logs

@@ -75,9 +75,9 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 1: Filter by level
 	t.Run("Filter by level", func(t *testing.T) {
-		payload := map[string]any{
-			"filters": map[string]any{
-				"level": []any{"INFO"},
+		payload := SetFilterPayload{
+			Filters: map[string][]string{
+				"level": {"INFO"},
 			},
 		}
 		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
@@ -93,9 +93,9 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 2: Filter by user
 	t.Run("Filter by user", func(t *testing.T) {
-		payload := map[string]any{
-			"filters": map[string]any{
-				"user": []any{"alice"},
+		payload := SetFilterPayload{
+			Filters: map[string][]string{
+				"user": {"alice"},
 			},
 		}
 		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
@@ -111,10 +111,10 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 3: Multiple filters (AND logic)
 	t.Run("Multiple filters", func(t *testing.T) {
-		payload := map[string]any{
-			"filters": map[string]any{
-				"level": []any{"INFO"},
-				"user":  []any{"alice"},
+		payload := SetFilterPayload{
+			Filters: map[string][]string{
+				"level": {"INFO"},
+				"user":  {"alice"},
 			},
 		}
 		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
@@ -129,9 +129,9 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 4: Multiple values for same property (OR logic)
 	t.Run("Multiple values for same property", func(t *testing.T) {
-		payload := map[string]any{
-			"filters": map[string]any{
-				"level": []any{"INFO", "ERROR"},
+		payload := SetFilterPayload{
+			Filters: map[string][]string{
+				"level": {"INFO", "ERROR"},
 			},
 		}
 		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
@@ -148,8 +148,8 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 5: Search term
 	t.Run("Search term", func(t *testing.T) {
-		payload := map[string]any{
-			"searchTerm": "message",
+		payload := SetFilterPayload{
+			SearchTerm: "message",
 		}
 		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
 		if len(result) != 4 {
@@ -159,10 +159,10 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 6: Search term with filter
 	t.Run("Search term with filter", func(t *testing.T) {
-		payload := map[string]any{
-			"filters": map[string]any{
-				"level":      []any{"INFO"},
-				"searchTerm": "message",
+		payload := SetFilterPayload{
+			SearchTerm: "message",
+			Filters: map[string][]string{
+				"level": {"INFO"},
 			},
 		}
 		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
@@ -178,7 +178,7 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 7: No filters (should return all logs)
 	t.Run("No filters", func(t *testing.T) {
-		payload := map[string]any{}
+		payload := SetFilterPayload{}
 		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
 		if len(result) != 4 {
 			t.Errorf("Expected 4 logs with no filters, got %d", len(result))
@@ -187,8 +187,8 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 8: Empty search term (should return all logs)
 	t.Run("Empty search term", func(t *testing.T) {
-		payload := map[string]any{
-			"searchTerm": "",
+		payload := SetFilterPayload{
+			SearchTerm: "",
 		}
 		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
 		if len(result) != 4 {
@@ -198,9 +198,9 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 9: Non-existent filter (should return no logs)
 	t.Run("Non-existent filter", func(t *testing.T) {
-		payload := map[string]any{
-			"filters": map[string]any{
-				"level": []any{"NONEXISTENT"},
+		payload := SetFilterPayload{
+			Filters: map[string][]string{
+				"level": {"NONEXISTENT"},
 			},
 		}
 		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
@@ -211,8 +211,8 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 10: Non-existent search term (should return no logs)
 	t.Run("Non-existent search term", func(t *testing.T) {
-		payload := map[string]any{
-			"searchTerm": "nonexistent",
+		payload := SetFilterPayload{
+			SearchTerm: "nonexistent",
 		}
 		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
 		if len(result) != 0 {
