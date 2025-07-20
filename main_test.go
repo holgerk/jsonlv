@@ -18,12 +18,12 @@ func TestIndexCreation(t *testing.T) {
 	}
 
 	for _, entry := range entries {
-		var raw map[string]interface{}
+		var raw map[string]any
 		if err := json.Unmarshal([]byte(entry), &raw); err != nil {
 			t.Fatalf("Failed to parse JSON: %v", err)
 		}
 		u := "test-uuid-" + entry
-		flat := make(map[string]interface{})
+		flat := make(map[string]any)
 		flattenMap(raw, "", flat)
 		updateIndex(u, flat)
 	}
@@ -61,12 +61,12 @@ func TestSetFilterMessage(t *testing.T) {
 	}
 
 	for i, logStr := range testLogs {
-		var raw map[string]interface{}
+		var raw map[string]any
 		if err := json.Unmarshal([]byte(logStr), &raw); err != nil {
 			t.Fatalf("Failed to parse JSON: %v", err)
 		}
 		u := fmt.Sprintf("test-uuid-%d", i)
-		flat := make(map[string]interface{})
+		flat := make(map[string]any)
 		flattenMap(raw, "", flat)
 		logStore[u] = LogEntry{UUID: u, Raw: raw}
 		logOrder = append(logOrder, u)
@@ -75,9 +75,9 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 1: Filter by level
 	t.Run("Filter by level", func(t *testing.T) {
-		payload := map[string]interface{}{
-			"filters": map[string]interface{}{
-				"level": []interface{}{"INFO"},
+		payload := map[string]any{
+			"filters": map[string]any{
+				"level": []any{"INFO"},
 			},
 		}
 		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
@@ -93,9 +93,9 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 2: Filter by user
 	t.Run("Filter by user", func(t *testing.T) {
-		payload := map[string]interface{}{
-			"filters": map[string]interface{}{
-				"user": []interface{}{"alice"},
+		payload := map[string]any{
+			"filters": map[string]any{
+				"user": []any{"alice"},
 			},
 		}
 		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
@@ -111,10 +111,10 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 3: Multiple filters (AND logic)
 	t.Run("Multiple filters", func(t *testing.T) {
-		payload := map[string]interface{}{
-			"filters": map[string]interface{}{
-				"level": []interface{}{"INFO"},
-				"user":  []interface{}{"alice"},
+		payload := map[string]any{
+			"filters": map[string]any{
+				"level": []any{"INFO"},
+				"user":  []any{"alice"},
 			},
 		}
 		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
@@ -129,9 +129,9 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 4: Multiple values for same property (OR logic)
 	t.Run("Multiple values for same property", func(t *testing.T) {
-		payload := map[string]interface{}{
-			"filters": map[string]interface{}{
-				"level": []interface{}{"INFO", "ERROR"},
+		payload := map[string]any{
+			"filters": map[string]any{
+				"level": []any{"INFO", "ERROR"},
 			},
 		}
 		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
@@ -148,7 +148,7 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 5: Search term
 	t.Run("Search term", func(t *testing.T) {
-		payload := map[string]interface{}{
+		payload := map[string]any{
 			"searchTerm": "message",
 		}
 		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
@@ -159,9 +159,9 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 6: Search term with filter
 	t.Run("Search term with filter", func(t *testing.T) {
-		payload := map[string]interface{}{
-			"filters": map[string]interface{}{
-				"level":      []interface{}{"INFO"},
+		payload := map[string]any{
+			"filters": map[string]any{
+				"level":      []any{"INFO"},
 				"searchTerm": "message",
 			},
 		}
@@ -178,7 +178,7 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 7: No filters (should return all logs)
 	t.Run("No filters", func(t *testing.T) {
-		payload := map[string]interface{}{}
+		payload := map[string]any{}
 		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
 		if len(result) != 4 {
 			t.Errorf("Expected 4 logs with no filters, got %d", len(result))
@@ -187,7 +187,7 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 8: Empty search term (should return all logs)
 	t.Run("Empty search term", func(t *testing.T) {
-		payload := map[string]interface{}{
+		payload := map[string]any{
 			"searchTerm": "",
 		}
 		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
@@ -198,9 +198,9 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 9: Non-existent filter (should return no logs)
 	t.Run("Non-existent filter", func(t *testing.T) {
-		payload := map[string]interface{}{
-			"filters": map[string]interface{}{
-				"level": []interface{}{"NONEXISTENT"},
+		payload := map[string]any{
+			"filters": map[string]any{
+				"level": []any{"NONEXISTENT"},
 			},
 		}
 		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
@@ -211,7 +211,7 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 10: Non-existent search term (should return no logs)
 	t.Run("Non-existent search term", func(t *testing.T) {
-		payload := map[string]interface{}{
+		payload := map[string]any{
 			"searchTerm": "nonexistent",
 		}
 		result := filterLogsWithSearch(logStore, logOrder, payload, 1000)
@@ -223,11 +223,11 @@ func TestSetFilterMessage(t *testing.T) {
 
 func TestLogMatchesFilter(t *testing.T) {
 	// Test log
-	log := map[string]interface{}{
+	log := map[string]any{
 		"level":   "INFO",
 		"message": "test message",
 		"user":    "alice",
-		"context": map[string]interface{}{
+		"context": map[string]any{
 			"requestId": "123",
 		},
 	}
@@ -286,11 +286,11 @@ func TestLogMatchesFilter(t *testing.T) {
 
 func TestLogMatchesSearch(t *testing.T) {
 	// Test log
-	log := map[string]interface{}{
+	log := map[string]any{
 		"level":   "INFO",
 		"message": "test message",
 		"user":    "alice",
-		"context": map[string]interface{}{
+		"context": map[string]any{
 			"requestId": "123",
 		},
 	}
