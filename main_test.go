@@ -47,10 +47,8 @@ func TestSetFilterMessage(t *testing.T) {
 	index = make(map[string]map[string][]string)
 	blacklist = make(map[string]bool)
 	maxIndexValues = 10
-
-	// Create test log store
-	logStore := make(map[string]LogEntry)
-	logOrder := []string{}
+	logStore = make(map[string]LogEntry)
+	logOrder = []string{}
 
 	// Add some test logs
 	testLogs := []string{
@@ -80,7 +78,7 @@ func TestSetFilterMessage(t *testing.T) {
 				"level": {"INFO"},
 			},
 		}
-		result := filterLogsWithSearch(&logStore, &logOrder, payload, 1000)
+		result := filterLogsWithSearch(payload, 1000)
 		if len(result) != 2 {
 			t.Errorf("Expected 2 logs with level INFO, got %d", len(result))
 		}
@@ -98,7 +96,7 @@ func TestSetFilterMessage(t *testing.T) {
 				"user": {"alice"},
 			},
 		}
-		result := filterLogsWithSearch(&logStore, &logOrder, payload, 1000)
+		result := filterLogsWithSearch(payload, 1000)
 		if len(result) != 2 {
 			t.Errorf("Expected 2 logs with user alice, got %d", len(result))
 		}
@@ -117,7 +115,7 @@ func TestSetFilterMessage(t *testing.T) {
 				"user":  {"alice"},
 			},
 		}
-		result := filterLogsWithSearch(&logStore, &logOrder, payload, 1000)
+		result := filterLogsWithSearch(payload, 1000)
 		if len(result) != 1 {
 			t.Errorf("Expected 1 log with level INFO and user alice, got %d", len(result))
 		}
@@ -134,7 +132,7 @@ func TestSetFilterMessage(t *testing.T) {
 				"level": {"INFO", "ERROR"},
 			},
 		}
-		result := filterLogsWithSearch(&logStore, &logOrder, payload, 1000)
+		result := filterLogsWithSearch(payload, 1000)
 		if len(result) != 3 {
 			t.Errorf("Expected 3 logs with level INFO or ERROR, got %d", len(result))
 		}
@@ -151,7 +149,7 @@ func TestSetFilterMessage(t *testing.T) {
 		payload := SetFilterPayload{
 			SearchTerm: "message",
 		}
-		result := filterLogsWithSearch(&logStore, &logOrder, payload, 1000)
+		result := filterLogsWithSearch(payload, 1000)
 		if len(result) != 4 {
 			t.Errorf("Expected 4 logs containing 'message', got %d", len(result))
 		}
@@ -165,7 +163,7 @@ func TestSetFilterMessage(t *testing.T) {
 				"level": {"INFO"},
 			},
 		}
-		result := filterLogsWithSearch(&logStore, &logOrder, payload, 1000)
+		result := filterLogsWithSearch(payload, 1000)
 		if len(result) != 2 {
 			t.Errorf("Expected 2 logs with level INFO containing 'message', got %d", len(result))
 		}
@@ -179,7 +177,7 @@ func TestSetFilterMessage(t *testing.T) {
 	// Test 7: No filters (should return all logs)
 	t.Run("No filters", func(t *testing.T) {
 		payload := SetFilterPayload{}
-		result := filterLogsWithSearch(&logStore, &logOrder, payload, 1000)
+		result := filterLogsWithSearch(payload, 1000)
 		if len(result) != 4 {
 			t.Errorf("Expected 4 logs with no filters, got %d", len(result))
 		}
@@ -190,7 +188,7 @@ func TestSetFilterMessage(t *testing.T) {
 		payload := SetFilterPayload{
 			SearchTerm: "",
 		}
-		result := filterLogsWithSearch(&logStore, &logOrder, payload, 1000)
+		result := filterLogsWithSearch(payload, 1000)
 		if len(result) != 4 {
 			t.Errorf("Expected 4 logs with empty search term, got %d", len(result))
 		}
@@ -203,7 +201,7 @@ func TestSetFilterMessage(t *testing.T) {
 				"level": {"NONEXISTENT"},
 			},
 		}
-		result := filterLogsWithSearch(&logStore, &logOrder, payload, 1000)
+		result := filterLogsWithSearch(payload, 1000)
 		if len(result) != 0 {
 			t.Errorf("Expected 0 logs with non-existent level, got %d", len(result))
 		}
@@ -214,7 +212,7 @@ func TestSetFilterMessage(t *testing.T) {
 		payload := SetFilterPayload{
 			SearchTerm: "nonexistent",
 		}
-		result := filterLogsWithSearch(&logStore, &logOrder, payload, 1000)
+		result := filterLogsWithSearch(payload, 1000)
 		if len(result) != 0 {
 			t.Errorf("Expected 0 logs with non-existent search term, got %d", len(result))
 		}
