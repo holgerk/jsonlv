@@ -22,7 +22,6 @@ import (
 
 	"flag"
 
-	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
@@ -31,8 +30,8 @@ import (
 // ============================================================================
 
 type LogEntry struct {
-	UUID string         `json:"uuid"`
-	Raw  map[string]any `json:"raw"`
+	id  uint
+	Raw map[string]any
 }
 
 type SetFilterPayload struct {
@@ -53,14 +52,15 @@ type wsClient struct {
 
 // Index structure: map[propertyKey][propertyValue][]uuid
 var (
-	logStore            = make(map[string]LogEntry)
-	logOrder            = []string{}
-	index               = make(map[string]map[string][]string)
+	logStore            = make(map[uint]LogEntry)
+	logOrder            = []uint{}
+	index               = make(map[string]map[string][]uint)
 	blacklist           = make(map[string]bool)
 	maxIndexValues      = 10
 	maxLogs             = 10000
 	maxIndexValueLength = 50 // default, can be overridden by flag
 	logStoreMu          sync.RWMutex
+	idCounter           = uint(0)
 )
 
 var upgrader = websocket.Upgrader{
@@ -118,17 +118,18 @@ func main() {
 
 		var raw map[string]any
 		if err := json.Unmarshal([]byte(line), &raw); err == nil {
-			u := uuid.New().String()
+			idCounter++
+			id := idCounter
 			flat := make(map[string]any)
-			flattenMap(raw, "", flat)
+			flattenMap(raw, flat)
 
 			logStoreMu.Lock()
-			logStore[u] = LogEntry{
-				UUID: u,
-				Raw:  raw,
+			logStore[id] = LogEntry{
+				id:  id,
+				Raw: raw,
 			}
-			logOrder = append(logOrder, u)
-			updateIndex(u, flat)
+			logOrder = append(logOrder, id)
+			updateIndex(id, flat)
 
 			// Enforce maxLogs
 			enforeMaxLogs()
@@ -137,7 +138,7 @@ func main() {
 			// Broadcast add_logs (send only raw log)
 			wsClientsMu.Lock()
 			for _, c := range wsClients {
-				if (c.filter == nil || logMatchesFilter(raw, c.filter)) && logMatchesSearch(raw, c.searchTerm) {
+				if (logMatchesFilter(raw, c.filter)) && logMatchesSearch(raw, c.searchTerm) {
 					wsSend(c, map[string]any{
 						"type":    "add_logs",
 						"payload": []map[string]any{raw},
@@ -185,15 +186,12 @@ func toString(val any) string {
 }
 
 // flattenMap flattens a nested map using dot notation
-func flattenMap(data map[string]any, prefix string, out map[string]any) {
+func flattenMap(data map[string]any, out map[string]any) {
 	for k, v := range data {
 		key := k
-		if prefix != "" {
-			key = prefix + "." + k
-		}
 		switch val := v.(type) {
 		case map[string]any:
-			flattenMap(val, key, out)
+			flattenMap(val, out)
 		default:
 			out[key] = val
 		}
@@ -205,7 +203,7 @@ func flattenMap(data map[string]any, prefix string, out map[string]any) {
 // ============================================================================
 
 // updateIndex adds a log entry to the search index
-func updateIndex(uuid string, flat map[string]any) {
+func updateIndex(entryId uint, flat map[string]any) {
 	for k, v := range flat {
 		valStr := toString(v)
 		if valStr == "" {
@@ -218,10 +216,10 @@ func updateIndex(uuid string, flat map[string]any) {
 			continue // skip blacklisted properties
 		}
 		if _, ok := index[k]; !ok {
-			index[k] = make(map[string][]string)
+			index[k] = make(map[string][]uint)
 		}
 		valMap := index[k]
-		valMap[valStr] = append(valMap[valStr], uuid)
+		valMap[valStr] = append(valMap[valStr], entryId)
 		// Blacklist if too many unique values
 		if len(valMap) > maxIndexValues {
 			delete(index, k)
@@ -237,25 +235,25 @@ func updateIndex(uuid string, flat map[string]any) {
 }
 
 // removeFromIndex removes a log entry from the search index
-func removeFromIndex(uuid string, flat map[string]any) {
+func removeFromIndex(entryId uint, flat map[string]any) {
 	for k, v := range flat {
 		valStr := toString(v)
 		if len(valStr) > maxIndexValueLength {
 			continue // omit very long values
 		}
 		if valMap, ok := index[k]; ok {
-			if uuids, ok := valMap[valStr]; ok {
-				// Remove uuid from slice
-				newUuids := []string{}
-				for _, id := range uuids {
-					if id != uuid {
-						newUuids = append(newUuids, id)
+			if entryIds, ok := valMap[valStr]; ok {
+				// Remove uint from slice
+				newEntryIds := []uint{}
+				for _, id := range entryIds {
+					if id != entryId {
+						newEntryIds = append(newEntryIds, id)
 					}
 				}
-				if len(newUuids) == 0 {
+				if len(newEntryIds) == 0 {
 					delete(valMap, valStr)
 				} else {
-					valMap[valStr] = newUuids
+					valMap[valStr] = newEntryIds
 				}
 			}
 			if len(valMap) == 0 {
@@ -270,8 +268,8 @@ func getIndexCounts() map[string]map[string]int {
 	result := make(map[string]map[string]int)
 	for k, valMap := range index {
 		result[k] = make(map[string]int)
-		for v, uuids := range valMap {
-			result[k][v] = len(uuids)
+		for v, entryIds := range valMap {
+			result[k][v] = len(entryIds)
 		}
 	}
 	return result
@@ -301,8 +299,11 @@ func getLastLogs(n int) []map[string]any {
 
 // logMatchesFilter checks if a log entry matches the given filters
 func logMatchesFilter(raw map[string]any, filter map[string][]string) bool {
+	if filter == nil {
+		return true
+	}
 	flat := make(map[string]any)
-	flattenMap(raw, "", flat)
+	flattenMap(raw, flat)
 	for k, vals := range filter {
 		valStr := toString(flat[k])
 		match := slices.Contains(vals, valStr)
@@ -322,7 +323,7 @@ func logMatchesSearch(raw map[string]any, searchTerm string) bool {
 
 	// Search in flattened structure
 	flat := make(map[string]any)
-	flattenMap(raw, "", flat)
+	flattenMap(raw, flat)
 
 	for _, value := range flat {
 		valueStr := toString(value)
@@ -362,7 +363,7 @@ func enforeMaxLogs() {
 		logOrder = logOrder[1:]
 		if entry, ok := logStore[oldest]; ok {
 			flatOld := make(map[string]any)
-			flattenMap(entry.Raw, "", flatOld)
+			flattenMap(entry.Raw, flatOld)
 			removeFromIndex(oldest, flatOld)
 			delete(logStore, oldest)
 			// Notify clients with update_index (send full index for now)
@@ -399,6 +400,23 @@ func wsBroadcastMsg(msg any) {
 	case wsBroadcast <- data:
 	default:
 		// Channel full, skip this broadcast
+	}
+}
+
+// wsBroadcastLoop handles broadcasting messages to all WebSocket clients
+func wsBroadcastLoop() {
+	for msg := range wsBroadcast {
+		wsClientsMu.Lock()
+		for conn, client := range wsClients {
+			client.writeMu.Lock()
+			err := conn.WriteMessage(websocket.TextMessage, msg)
+			client.writeMu.Unlock()
+			if err != nil {
+				conn.Close()
+				delete(wsClients, conn)
+			}
+		}
+		wsClientsMu.Unlock()
 	}
 }
 
@@ -457,23 +475,6 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				"payload": filtered,
 			})
 		}
-	}
-}
-
-// wsBroadcastLoop handles broadcasting messages to all WebSocket clients
-func wsBroadcastLoop() {
-	for msg := range wsBroadcast {
-		wsClientsMu.Lock()
-		for conn, client := range wsClients {
-			client.writeMu.Lock()
-			err := conn.WriteMessage(websocket.TextMessage, msg)
-			client.writeMu.Unlock()
-			if err != nil {
-				conn.Close()
-				delete(wsClients, conn)
-			}
-		}
-		wsClientsMu.Unlock()
 	}
 }
 

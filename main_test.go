@@ -66,7 +66,7 @@ func TestSetFilterMessage(t *testing.T) {
 		u := fmt.Sprintf("test-uuid-%d", i)
 		flat := make(map[string]any)
 		flattenMap(raw, "", flat)
-		logStore[u] = LogEntry{UUID: u, Raw: raw}
+		logStore[u] = LogEntry{id: u, Raw: raw}
 		logOrder = append(logOrder, u)
 		updateIndex(u, flat)
 	}
