@@ -377,21 +377,7 @@ func main() {
 			updateIndex(u, flat)
 
 			// Enforce maxLogs
-			if len(logOrder) > maxLogs {
-				oldest := logOrder[0]
-				logOrder = logOrder[1:]
-				if entry, ok := logStore[oldest]; ok {
-					flatOld := make(map[string]any)
-					flattenMap(entry.Raw, "", flatOld)
-					removeFromIndex(oldest, flatOld)
-					delete(logStore, oldest)
-					// Notify clients with update_index (send full index for now)
-					wsBroadcastMsg(map[string]any{
-						"type":    "update_index",
-						"payload": getIndexCounts(),
-					})
-				}
-			}
+			enforeMaxLogs(logOrder, logStore)
 
 			// Broadcast add_logs (send only raw log)
 			wsClientsMu.Lock()
@@ -412,5 +398,23 @@ func main() {
 			})
 		}
 		// else: not JSON, just echo
+	}
+}
+
+func enforeMaxLogs(logOrder []string, logStore map[string]LogEntry) {
+	if len(logOrder) > maxLogs {
+		oldest := logOrder[0]
+		logOrder = logOrder[1:]
+		if entry, ok := logStore[oldest]; ok {
+			flatOld := make(map[string]any)
+			flattenMap(entry.Raw, "", flatOld)
+			removeFromIndex(oldest, flatOld)
+			delete(logStore, oldest)
+			// Notify clients with update_index (send full index for now)
+			wsBroadcastMsg(map[string]any{
+				"type":    "update_index",
+				"payload": getIndexCounts(),
+			})
+		}
 	}
 }
