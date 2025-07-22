@@ -3,7 +3,6 @@ body {
   font-family: system-ui, sans-serif;
   background: #fdf6e3;
   color: #586e75;
-  overflow: hidden;
 }
 #top-bar {
   background: #eee8d5;
@@ -103,7 +102,7 @@ body {
 }
 #main {
   display: flex;
-  height: calc(100vh - 48px);
+  height: calc(100vh - 55px);
 }
 #filter-panel {
   width: 260px;
@@ -217,6 +216,9 @@ body {
   border-bottom: 1px solid #93a1a1;
   color: #657b83;
   border-radius: 4px 4px 0px 0px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  
 }
 
 .filter-btn {
@@ -229,6 +231,9 @@ body {
   cursor: pointer;
   color: #586e75;
   transition: background 0.2s;
+  word-break: auto-phrase;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .filter-btn:hover {
@@ -312,6 +317,7 @@ body {
 
 .log-entry .property-value {
   color: #2aa198;
+  word-break: break-all;
 }
 
 .log-entry .property-value.string {
