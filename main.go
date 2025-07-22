@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"slices"
 	"strings"
+	"time"
 
 	"log"
 	"net/http"
@@ -57,6 +59,7 @@ var (
 	maxIndexValues      = 10
 	maxLogs             = 10000
 	maxIndexValueLength = 50 // default, can be overridden by flag
+	logStoreMu          sync.RWMutex
 )
 
 var upgrader = websocket.Upgrader{
@@ -67,18 +70,21 @@ type wsClient struct {
 	conn       *websocket.Conn
 	filter     map[string][]string
 	searchTerm string
+	writeMu    sync.Mutex
 }
 
 var wsClients = make(map[*websocket.Conn]*wsClient)
 var wsBroadcast = make(chan []byte)
 var wsClientsMu sync.Mutex
 
-func wsSend(conn *websocket.Conn, msg any) error {
+func wsSend(client *wsClient, msg any) error {
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return err
 	}
-	return conn.WriteMessage(websocket.TextMessage, data)
+	client.writeMu.Lock()
+	defer client.writeMu.Unlock()
+	return client.conn.WriteMessage(websocket.TextMessage, data)
 }
 
 func wsBroadcastMsg(msg any) {
@@ -86,13 +92,10 @@ func wsBroadcastMsg(msg any) {
 	if err != nil {
 		return
 	}
-	wsClientsMu.Lock()
-	defer wsClientsMu.Unlock()
-	for client := range wsClients {
-		if err := client.WriteMessage(websocket.TextMessage, data); err != nil {
-			client.Close()
-			delete(wsClients, client)
-		}
+	select {
+	case wsBroadcast <- data:
+	default:
+		// Channel full, skip this broadcast
 	}
 }
 
@@ -107,14 +110,17 @@ func getIndexCounts() map[string]map[string]int {
 	return result
 }
 
-func getLastLogs(logStore map[string]LogEntry, logOrder []string, n int) []map[string]any {
+func getLastLogs(logStore *map[string]LogEntry, logOrder *[]string, n int) []map[string]any {
+	logStoreMu.RLock()
+	defer logStoreMu.RUnlock()
+
 	res := []map[string]any{}
 	start := 0
-	if len(logOrder) > n {
-		start = len(logOrder) - n
+	if len(*logOrder) > n {
+		start = len(*logOrder) - n
 	}
-	for _, uuid := range logOrder[start:] {
-		if entry, ok := logStore[uuid]; ok {
+	for _, uuid := range (*logOrder)[start:] {
+		if entry, ok := (*logStore)[uuid]; ok {
 			res = append(res, entry.Raw)
 		}
 	}
@@ -153,14 +159,17 @@ func logMatchesSearch(raw map[string]any, searchTerm string) bool {
 	return false
 }
 
-func filterLogsWithSearch(logStore map[string]LogEntry, logOrder []string, payload SetFilterPayload, n int) []map[string]any {
+func filterLogsWithSearch(logStore *map[string]LogEntry, logOrder *[]string, payload SetFilterPayload, n int) []map[string]any {
+	logStoreMu.RLock()
+	defer logStoreMu.RUnlock()
+
 	result := []map[string]any{}
 	count := 0
 
 	// Start from the end (most recent logs)
-	for i := len(logOrder) - 1; i >= 0 && count < n; i-- {
-		uuid := logOrder[i]
-		if entry, ok := logStore[uuid]; ok {
+	for i := len(*logOrder) - 1; i >= 0 && count < n; i-- {
+		uuid := (*logOrder)[i]
+		if entry, ok := (*logStore)[uuid]; ok {
 			if logMatchesFilter(entry.Raw, payload.Filters) && logMatchesSearch(entry.Raw, payload.SearchTerm) {
 				result = append([]map[string]any{entry.Raw}, result...)
 				count++
@@ -179,8 +188,9 @@ func wsHandler(logStore *map[string]LogEntry, logOrder *[]string) http.HandlerFu
 			return
 		}
 		defer conn.Close()
+		client := &wsClient{conn: conn, filter: nil}
 		wsClientsMu.Lock()
-		wsClients[conn] = &wsClient{conn: conn, filter: nil}
+		wsClients[conn] = client
 		wsClientsMu.Unlock()
 
 		// On connect: send set_index and set_logs (unfiltered)
@@ -188,13 +198,15 @@ func wsHandler(logStore *map[string]LogEntry, logOrder *[]string) http.HandlerFu
 			"type":    "set_index",
 			"payload": getIndexCounts(),
 		}
-		wsSend(conn, setIndex)
+		wsSend(client, setIndex)
 
 		setLogs := map[string]any{
 			"type":    "set_logs",
-			"payload": getLastLogs(*logStore, *logOrder, 1000),
+			"payload": getLastLogs(logStore, logOrder, 1000),
 		}
-		wsSend(conn, setLogs)
+		wsSend(client, setLogs)
+
+		wsSend(client, getStatusMessage(logStore))
 
 		for {
 			_, msg, err := conn.ReadMessage()
@@ -217,8 +229,8 @@ func wsHandler(logStore *map[string]LogEntry, logOrder *[]string) http.HandlerFu
 				}
 				wsClientsMu.Unlock()
 				// Send set_logs with filtered logs
-				filtered := filterLogsWithSearch(*logStore, *logOrder, req.Payload, 1000)
-				wsSend(conn, map[string]any{
+				filtered := filterLogsWithSearch(logStore, logOrder, req.Payload, 1000)
+				wsSend(client, map[string]any{
 					"type":    "set_logs",
 					"payload": filtered,
 				})
@@ -230,13 +242,42 @@ func wsHandler(logStore *map[string]LogEntry, logOrder *[]string) http.HandlerFu
 func wsBroadcastLoop() {
 	for msg := range wsBroadcast {
 		wsClientsMu.Lock()
-		for client := range wsClients {
-			if err := client.WriteMessage(websocket.TextMessage, msg); err != nil {
-				client.Close()
-				delete(wsClients, client)
+		for conn, client := range wsClients {
+			client.writeMu.Lock()
+			err := conn.WriteMessage(websocket.TextMessage, msg)
+			client.writeMu.Unlock()
+			if err != nil {
+				conn.Close()
+				delete(wsClients, conn)
 			}
 		}
 		wsClientsMu.Unlock()
+	}
+}
+
+func statusBroadcastLoop(logStore *map[string]LogEntry) {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		wsBroadcastMsg(getStatusMessage(logStore))
+	}
+}
+
+func getStatusMessage(logStore *map[string]LogEntry) map[string]any {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	logStoreMu.RLock()
+	logsCount := len(*logStore)
+	logStoreMu.RUnlock()
+
+	return map[string]any{
+		"type": "set_status",
+		"payload": map[string]any{
+			"allocatedMemory": m.Alloc,
+			"logsStored":      logsCount,
+		},
 	}
 }
 
@@ -337,6 +378,7 @@ func main() {
 	reader := bufio.NewReader(os.Stdin)
 
 	go wsBroadcastLoop()
+	go statusBroadcastLoop(&logStore)
 
 	if *devMode {
 		log.Println("[dev mode] Serving web files from ./web directory")
@@ -346,8 +388,8 @@ func main() {
 	}
 	http.HandleFunc("/ws", wsHandler(&logStore, &logOrder))
 	go func() {
-		log.Println("Web server listening on :8080")
-		if err := http.ListenAndServe(":8080", nil); err != nil {
+		log.Println("Web server listening on :8181")
+		if err := http.ListenAndServe(":8181", nil); err != nil {
 			log.Fatalf("Web server error: %v", err)
 		}
 	}()
@@ -369,6 +411,8 @@ func main() {
 			u := uuid.New().String()
 			flat := make(map[string]any)
 			flattenMap(raw, "", flat)
+
+			logStoreMu.Lock()
 			logStore[u] = LogEntry{
 				UUID: u,
 				Raw:  raw,
@@ -377,13 +421,14 @@ func main() {
 			updateIndex(u, flat)
 
 			// Enforce maxLogs
-			enforeMaxLogs(logOrder, logStore)
+			enforeMaxLogs(&logOrder, &logStore)
+			logStoreMu.Unlock()
 
 			// Broadcast add_logs (send only raw log)
 			wsClientsMu.Lock()
 			for _, c := range wsClients {
 				if (c.filter == nil || logMatchesFilter(raw, c.filter)) && logMatchesSearch(raw, c.searchTerm) {
-					wsSend(c.conn, map[string]any{
+					wsSend(c, map[string]any{
 						"type":    "add_logs",
 						"payload": []map[string]any{raw},
 					})
@@ -401,15 +446,15 @@ func main() {
 	}
 }
 
-func enforeMaxLogs(logOrder []string, logStore map[string]LogEntry) {
-	if len(logOrder) > maxLogs {
-		oldest := logOrder[0]
-		logOrder = logOrder[1:]
-		if entry, ok := logStore[oldest]; ok {
+func enforeMaxLogs(logOrder *[]string, logStore *map[string]LogEntry) {
+	if len(*logOrder) > maxLogs {
+		oldest := (*logOrder)[0]
+		*logOrder = (*logOrder)[1:]
+		if entry, ok := (*logStore)[oldest]; ok {
 			flatOld := make(map[string]any)
 			flattenMap(entry.Raw, "", flatOld)
 			removeFromIndex(oldest, flatOld)
-			delete(logStore, oldest)
+			delete(*logStore, oldest)
 			// Notify clients with update_index (send full index for now)
 			wsBroadcastMsg(map[string]any{
 				"type":    "update_index",

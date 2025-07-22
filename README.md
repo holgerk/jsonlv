@@ -210,6 +210,18 @@ A command-line and web-based real-time log inspection tool written in Go.
       }
       ```
     - Result: Client removes the given filter boxes from display
+  - **`set_status`:** Status information sent every 10 seconds.
+    - Payload:
+      ```json
+      {
+        "type": "set_status",
+        "payload": {
+          "allocatedMemory": 1048576,
+          "logsStored": 1250
+        }
+      }
+      ```
+    - Result: Client updates status display with current memory usage and log count
 
 ---
 
