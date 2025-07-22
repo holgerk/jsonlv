@@ -7,6 +7,7 @@ const searchInput = document.getElementById("search-input");
 const searchClear = document.getElementById("search-clear");
 const filterSearchInput = document.getElementById("filter-search-input");
 const filterSearchClear = document.getElementById("filter-search-clear");
+const resetFiltersBtn = document.getElementById("reset-filters");
 
 let ws;
 let reconnectInterval = null;
@@ -157,6 +158,12 @@ function setupSearch() {
   });
 }
 
+function resetAllFilters() {
+  filters = {};
+  sendFilterRequest();
+  renderFilters();
+}
+
 function setupFilterSearch() {
   filterSearchInput.addEventListener("input", (e) => {
     filterSearchTerm = e.target.value;
@@ -303,6 +310,10 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+function setupResetFilters() {
+  resetFiltersBtn.addEventListener("click", resetAllFilters);
+}
+
 function setupResizer() {
   resizer.addEventListener("mousedown", (e) => {
     isResizing = true;
@@ -313,7 +324,7 @@ function setupResizer() {
     if (!isResizing) return;
 
     const newWidth = e.clientX - filterPanel.offsetLeft;
-    const minWidth = 120;
+    const minWidth = 228;
     const maxWidth = 600;
 
     if (newWidth >= minWidth && newWidth <= maxWidth) {
@@ -330,6 +341,7 @@ function setupResizer() {
 connectWS();
 setupSearch();
 setupFilterSearch();
+setupResetFilters();
 setupFullscreen();
 setupResizer();
 updateClearButton();
