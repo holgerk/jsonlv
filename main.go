@@ -333,8 +333,6 @@ func logMatchesSearch(raw map[string]any, searchTerm string) bool {
 	for _, value := range flat {
 		valueStr := toString(value)
 		if strings.Contains(strings.ToLower(valueStr), searchTerm) {
-			fmt.Printf("a: %v, b: %v, c: %v, d: %v", strings.ToLower(valueStr), searchTerm, valueStr, value)
-			fmt.Printf("%v", raw)
 			return true
 		}
 	}
