@@ -305,8 +305,10 @@ func TestLogMatchesSearch(t *testing.T) {
 		"level":   "INFO",
 		"message": "test message",
 		"user":    "alice",
+		"count":   456,
 		"context": map[string]any{
 			"requestId": "123",
+			"count": 789,
 		},
 	}
 
@@ -350,11 +352,54 @@ func TestLogMatchesSearch(t *testing.T) {
 			searchTerm: "mess",
 			expected:   true,
 		},
+		{
+			name:       "Numeric match",
+			searchTerm: "456",
+			expected:   true,
+		},
+		{
+			name:       "Numeric partial match",
+			searchTerm: "45",
+			expected:   true,
+		},
+		{
+			name:       "Nested numeric match",
+			searchTerm: "789",
+			expected:   true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := logMatchesSearch(log, tt.searchTerm)
+			if result != tt.expected {
+				t.Errorf("Expected %v, got %v", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestToString(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    float64
+		expected string
+	}{
+		{
+			name:     "Scientific number int (but json.Unmarshal -> float64)",
+			input:    4.44928742e+08,
+			expected: "444928742",
+		},
+		{
+			name:     "Float number",
+			input:    4.44928742e+06,
+			expected: "4449287.42",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := toString(tt.input)
 			if result != tt.expected {
 				t.Errorf("Expected %v, got %v", tt.expected, result)
 			}

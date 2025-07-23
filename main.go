@@ -9,6 +9,7 @@ import (
 	"os"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -169,7 +170,7 @@ func toString(val any) string {
 	case fmt.Stringer:
 		return v.String()
 	case float64:
-		return fmt.Sprintf("%g", v)
+		return strconv.FormatFloat(v, 'f', -1, 64)
 	case float32:
 		return fmt.Sprintf("%g", v)
 	case int, int8, int16, int32, int64:
@@ -332,6 +333,8 @@ func logMatchesSearch(raw map[string]any, searchTerm string) bool {
 	for _, value := range flat {
 		valueStr := toString(value)
 		if strings.Contains(strings.ToLower(valueStr), searchTerm) {
+			fmt.Printf("a: %v, b: %v, c: %v, d: %v", strings.ToLower(valueStr), searchTerm, valueStr, value)
+			fmt.Printf("%v", raw)
 			return true
 		}
 	}
@@ -348,8 +351,8 @@ func filterLogsWithSearch(payload SetFilterPayload, n int) []map[string]any {
 
 	// Start from the end (most recent logs)
 	for i := len(logOrder) - 1; i >= 0 && count < n; i-- {
-		uuid := logOrder[i]
-		if entry, ok := logStore[uuid]; ok {
+		entryId := logOrder[i]
+		if entry, ok := logStore[entryId]; ok {
 			if logMatchesFilter(entry.Raw, payload.Filters) && logMatchesSearch(entry.Raw, payload.SearchTerm) {
 				result = append([]map[string]any{entry.Raw}, result...)
 				count++
