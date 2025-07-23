@@ -121,7 +121,7 @@ func main() {
 			idCounter++
 			id := idCounter
 			flat := make(map[string]any)
-			flattenMap(raw, flat)
+			flattenMap(raw, flat, "")
 
 			logStoreMu.Lock()
 			logStore[id] = LogEntry{
@@ -186,12 +186,16 @@ func toString(val any) string {
 }
 
 // flattenMap flattens a nested map using dot notation
-func flattenMap(data map[string]any, out map[string]any) {
+func flattenMap(data map[string]any, out map[string]any, prefix string) {
 	for k, v := range data {
 		key := k
+		if prefix != "" {
+			key = prefix + "." + k
+		}
+
 		switch val := v.(type) {
 		case map[string]any:
-			flattenMap(val, out)
+			flattenMap(val, out, key)
 		default:
 			out[key] = val
 		}
@@ -303,7 +307,7 @@ func logMatchesFilter(raw map[string]any, filter map[string][]string) bool {
 		return true
 	}
 	flat := make(map[string]any)
-	flattenMap(raw, flat)
+	flattenMap(raw, flat, "")
 	for k, vals := range filter {
 		valStr := toString(flat[k])
 		match := slices.Contains(vals, valStr)
@@ -323,7 +327,7 @@ func logMatchesSearch(raw map[string]any, searchTerm string) bool {
 
 	// Search in flattened structure
 	flat := make(map[string]any)
-	flattenMap(raw, flat)
+	flattenMap(raw, flat, "")
 
 	for _, value := range flat {
 		valueStr := toString(value)
@@ -363,7 +367,7 @@ func enforeMaxLogs() {
 		logOrder = logOrder[1:]
 		if entry, ok := logStore[oldest]; ok {
 			flatOld := make(map[string]any)
-			flattenMap(entry.Raw, flatOld)
+			flattenMap(entry.Raw, flatOld, "")
 			removeFromIndex(oldest, flatOld)
 			delete(logStore, oldest)
 			// Notify clients with update_index (send full index for now)

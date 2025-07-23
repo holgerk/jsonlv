@@ -4,6 +4,25 @@ import (
 	"encoding/json"
 	"testing"
 )
+
+func TestFlattenMap(t *testing.T) {
+	log := map[string]any{
+		"level":   "INFO",
+		"context": map[string]any{
+			"requestId": "123",
+		},
+	}
+	flat := make(map[string]any)
+	flattenMap(log, flat, "")
+
+	if flat["context.requestId"] != "123" {
+		t.Errorf("Expected %v but got %v", "123", flat["context.requestId"])
+	}
+	if flat["level"] != "INFO" {
+		t.Errorf("Expected %v but got %v", "INFO", flat["level"])
+	}
+}
+
 func TestIndexCreation(t *testing.T) {
 	index = make(map[string]map[string][]uint)
 	blacklist = make(map[string]bool)
@@ -22,7 +41,7 @@ func TestIndexCreation(t *testing.T) {
 		}
 		u := uint(id)
 		flat := make(map[string]any)
-		flattenMap(raw, flat)
+		flattenMap(raw, flat, "")
 		updateIndex(u, flat)
 	}
 
@@ -63,7 +82,7 @@ func TestSetFilterMessage(t *testing.T) {
 		}
 		u := uint(i)
 		flat := make(map[string]any)
-		flattenMap(raw, flat)
+		flattenMap(raw, flat, "")
 		logStore[u] = LogEntry{id: u, Raw: raw}
 		logOrder = append(logOrder, u)
 		updateIndex(u, flat)
@@ -234,6 +253,11 @@ func TestLogMatchesFilter(t *testing.T) {
 		expected bool
 	}{
 		{
+			name:     "Match nested property",
+			filter:   map[string][]string{"context.requestId": {"123"}},
+			expected: true,
+		},
+		{
 			name:     "No filter",
 			filter:   map[string][]string{},
 			expected: true,
@@ -254,11 +278,6 @@ func TestLogMatchesFilter(t *testing.T) {
 			expected: false,
 		},
 		{
-			name:     "Match nested property",
-			filter:   map[string][]string{"context.requestId": {"123"}},
-			expected: true,
-		},
-		{
 			name:     "Multiple properties (AND)",
 			filter:   map[string][]string{"level": {"INFO"}, "user": {"alice"}},
 			expected: true,
@@ -274,7 +293,7 @@ func TestLogMatchesFilter(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := logMatchesFilter(log, tt.filter)
 			if result != tt.expected {
-				t.Errorf("Expected %v, got %v", tt.expected, result)
+				t.Errorf("%v - Expected %v, got %v", tt.name, tt.expected, result)
 			}
 		})
 	}
