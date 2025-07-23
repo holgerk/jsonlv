@@ -228,8 +228,9 @@ function renderLogs() {
 
     // Format timestamp if present
     let timestamp = "";
-    if (log.timestamp) {
-      timestamp = `<div class="timestamp">${new Date(log.timestamp).toISOString()}</div>`;
+    if (log.timestamp || log.datetime) {
+      const timeValue = log.timestamp || log.datetime;
+      timestamp = `<div class="timestamp">${new Date(timeValue).toISOString()}</div>`;
     }
 
     // Format level if present
@@ -246,24 +247,34 @@ function renderLogs() {
     }
 
     // Format other properties
-    const properties = Object.keys(log)
-      .filter(
-        (key) => !["timestamp", "level", "level_name", "message"].includes(key),
-      )
-      .map((key) => {
-        const value = log[key];
-        const valueClass = getValueClass(value);
-        const formattedValue = formatValue(value);
-        return `<div class="property">
-          <span class="property-name">${escapeHtml(key)}:</span>
-          <span class="property-value ${valueClass}">${formattedValue}</span>
-        </div>`;
-      })
-      .join("");
+    const propertyKeys = Object.keys(log).filter(
+      (key) =>
+        !["timestamp", "datetime", "level", "level_name", "message"].includes(
+          key,
+        ),
+    );
 
-    const propertiesDisplay = properties
-      ? `<div class="properties">${properties}</div>`
-      : "";
+    let propertiesDisplay = "";
+    if (propertyKeys.length > 0) {
+      const propertyRows = propertyKeys
+        .map((key) => {
+          const value = log[key];
+          const valueClass = getValueClass(value);
+          const formattedValue = formatValue(value);
+          return `<tr>
+            <th class="property-name ${valueClass}">${escapeHtml(key)}</th>
+            <td class="property-value ${valueClass}">${formattedValue}</td>
+          </tr>`;
+        })
+        .join("");
+
+      propertiesDisplay = `<table class="properties-table">
+        <colgroup>
+          <col style="width: 1px;">
+        </colgroup>
+        <tbody>${propertyRows}</tbody>
+      </table>`;
+    }
 
     entry.innerHTML = `
       ${timestamp}
@@ -294,14 +305,64 @@ function getValueClass(value) {
   if (typeof value === "string") return "string";
   if (typeof value === "number") return "number";
   if (typeof value === "boolean") return "boolean";
+  if (typeof value === "object") return "object";
   if (value === null || value === undefined) return "null";
   return "";
 }
 
+function syntaxHighlightJson(json) {
+  json = JSON.stringify(json, null, 4); // Pretty-print with 2-space indent
+
+  json = json
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  return json.replace(
+    /("(\\u[\da-fA-F]{4}|\\[^u]|[^\\"])*"(?:\s*:)?|\b(true|false|null)\b|\b\d+\.?\d*\b)/g,
+    (match) => {
+      let className = "number";
+      if (/^"/.test(match)) {
+        className = /:$/.test(match) ? "key" : "string";
+      } else if (/true|false/.test(match)) {
+        className = "boolean";
+      } else if (/null/.test(match)) {
+        className = "null";
+      }
+      return `<span class="${className}">${match}</span>`;
+    },
+  );
+}
+
 function formatValue(value) {
   if (value === null || value === undefined) return "null";
-  if (typeof value === "object") return JSON.stringify(value);
-  return escapeHtml(value.toString());
+  if (typeof value === "object") {
+    return syntaxHighlightJson(value);
+  }
+
+  let stringValue = value.toString();
+
+  // Highlight search term matches if search term exists
+  if (searchTerm && searchTerm.trim()) {
+    const searchRegex = new RegExp(`(${escapeRegex(searchTerm.trim())})`, "gi");
+    stringValue = stringValue.replace(
+      searchRegex,
+      '<span class="highlight">$1</span>',
+    );
+  }
+
+  // Escape HTML but preserve our highlight spans
+  stringValue = stringValue
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/&lt;span class="highlight"&gt;/g, '<span class="highlight">')
+    .replace(/&lt;\/span&gt;/g, "</span>");
+
+  return stringValue;
+}
+
+function escapeRegex(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function escapeHtml(text) {
@@ -337,6 +398,22 @@ function setupResizer() {
   });
 }
 
+function setupExpandJson() {
+  document.addEventListener("click", (e) => {
+    console.debug("click", e.target);
+    const isPropertyName = e.target.classList.contains("property-name");
+    const hasObjectValue = e.target.classList.contains("object");
+    if (isPropertyName && hasObjectValue) {
+      let style = e.target.nextElementSibling.style;
+      if (style.whiteSpace === "break-spaces") {
+        style.whiteSpace = "normal";
+      } else {
+        style.whiteSpace = "break-spaces";
+      }
+    }
+  });
+}
+
 // Initialize
 connectWS();
 setupSearch();
@@ -344,5 +421,6 @@ setupFilterSearch();
 setupResetFilters();
 setupFullscreen();
 setupResizer();
+setupExpandJson();
 updateClearButton();
 updateFilterClearButton();

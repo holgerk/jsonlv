@@ -137,6 +137,7 @@ body {
     width: 145px;
     box-sizing: border-box;
     transition: border-color 0.2s;
+    flex: 1;
 }
 
 #filter-search-input:focus {
@@ -215,7 +216,6 @@ body {
     background: #fdf6e3;
     padding: 16px;
     overflow-y: auto;
-    font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
     font-size: 13px;
     line-height: 1.4;
 }
@@ -319,13 +319,22 @@ body {
     margin-top: 4px;
 }
 
-.log-entry .properties {
-    margin-top: 8px;
+.log-entry .properties-table {
+    margin-top: 10px;
     padding-top: 8px;
     border-top: 1px solid #93a1a1;
     font-size: 12px;
     color: #657b83;
+    width: 100%;
+    border-collapse: collapse;
 }
+
+.log-entry .properties-table th, td {
+    padding: 8px 8px 0 0;
+    text-align: left;
+    vertical-align: text-top;
+}
+
 
 .log-entry .property {
     margin-bottom: 2px;
@@ -339,6 +348,7 @@ body {
 .log-entry .property-value {
     color: #2aa198;
     word-break: break-all;
+    white-space: normal;
 }
 
 .log-entry .property-value.string {
@@ -359,19 +369,19 @@ body {
 }
 
 /* Solarized syntax highlighting */
-pre .key {
+.log-entry .property-value.object .key {
     color: #b58900;
 }
-pre .string {
+.log-entry .property-value.object .string {
     color: #2aa198;
 }
-pre .number {
+.log-entry .property-value.object .number {
     color: #268bd2;
 }
-pre .boolean {
+.log-entry .property-value.object .boolean {
     color: #cb4b16;
 }
-pre .null {
+.log-entry .property-value.object .null {
     color: #6c71c4;
 }
 
@@ -397,4 +407,9 @@ pre .log-level-warn {
     #log-panel {
         padding: 8px;
     }
+}
+
+.highlight {
+    background: yellow;
+    color: black;
 }
