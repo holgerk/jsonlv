@@ -2,12 +2,10 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"testing"
 )
-
 func TestIndexCreation(t *testing.T) {
-	index = make(map[string]map[string][]string)
+	index = make(map[string]map[string][]uint)
 	blacklist = make(map[string]bool)
 	maxIndexValues = 2 // lower for test
 
@@ -17,14 +15,14 @@ func TestIndexCreation(t *testing.T) {
 		`{"level": "DEBUG", "user": "carol"}`,
 	}
 
-	for _, entry := range entries {
+	for id, entry := range entries {
 		var raw map[string]any
 		if err := json.Unmarshal([]byte(entry), &raw); err != nil {
 			t.Fatalf("Failed to parse JSON: %v", err)
 		}
-		u := "test-uuid-" + entry
+		u := uint(id)
 		flat := make(map[string]any)
-		flattenMap(raw, "", flat)
+		flattenMap(raw, flat)
 		updateIndex(u, flat)
 	}
 
@@ -44,11 +42,11 @@ func TestIndexCreation(t *testing.T) {
 
 func TestSetFilterMessage(t *testing.T) {
 	// Reset global state
-	index = make(map[string]map[string][]string)
+	index = make(map[string]map[string][]uint)
 	blacklist = make(map[string]bool)
 	maxIndexValues = 10
-	logStore = make(map[string]LogEntry)
-	logOrder = []string{}
+	logStore = make(map[uint]LogEntry)
+	logOrder = []uint{}
 
 	// Add some test logs
 	testLogs := []string{
@@ -63,9 +61,9 @@ func TestSetFilterMessage(t *testing.T) {
 		if err := json.Unmarshal([]byte(logStr), &raw); err != nil {
 			t.Fatalf("Failed to parse JSON: %v", err)
 		}
-		u := fmt.Sprintf("test-uuid-%d", i)
+		u := uint(i)
 		flat := make(map[string]any)
-		flattenMap(raw, "", flat)
+		flattenMap(raw, flat)
 		logStore[u] = LogEntry{id: u, Raw: raw}
 		logOrder = append(logOrder, u)
 		updateIndex(u, flat)
