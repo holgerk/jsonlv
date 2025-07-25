@@ -46,25 +46,42 @@ type wsClient struct {
 	writeMu       sync.Mutex
 }
 
+type BufferedLogsResult struct {
+	Logs        []map[string]any
+	IndexCounts map[string]map[string]int
+	HasLogs     bool
+}
+
+type LogManager struct {
+	// Storage
+	logOrder   []uint
+	logStore   map[uint]LogEntry
+	logStoreMu sync.RWMutex
+
+	// Buffering
+	logBuffer   []map[string]any
+	logBufferMu sync.RWMutex
+
+	// Indexing
+	index     map[string]map[string][]uint
+	blacklist map[string]bool
+
+	// Configuration
+	maxIndexValues      int
+	maxLogs             int
+	maxIndexValueLength int
+
+	// ID generation
+	idCounter   uint
+	idCounterMu sync.Mutex
+}
+
 // ============================================================================
 // Global Variables
 // ============================================================================
 
 var (
-	logOrder    = []uint{}
-	logStore    = make(map[uint]LogEntry)
-	logStoreMu  sync.RWMutex
-	logBuffer   = []map[string]any{}
-	logBufferMu sync.RWMutex
-	// structure: map[propertyKey][propertyValue][]id
-	index          = make(map[string]map[string][]uint)
-	blacklist      = make(map[string]bool)
-	maxIndexValues = 10
-	maxLogs        = 10000
-	idCounter      = uint(0)
-	// flags
-	maxIndexValueLength = 50 // default, can be overridden by flag
-	devMode             = false
+	logManager *LogManager
 )
 
 var upgrader = websocket.Upgrader{
@@ -85,16 +102,32 @@ var webFiles, _ = fs.Sub(webFS, "web")
 // ============================================================================
 
 func main() {
-	flag.BoolVar(&devMode, "dev", false, "Serve web files from filesystem (for development)")
-	flag.IntVar(&maxIndexValueLength, "maxIndexValueLength", 50, "Maximum length of values to index (omit longer values)")
+	devMode := flag.Bool("dev", false, "Serve web files from filesystem (for development)")
+	maxIndexValueLengthFlag := flag.Int("maxIndexValueLength", 50, "Maximum length of values to index (omit longer values)")
 	flag.Parse()
+
+	// Initialize LogManager
+	logManager = NewLogManager(10, 10000, *maxIndexValueLengthFlag)
 
 	reader := bufio.NewReader(os.Stdin)
 
-	go startWebserver()
 	go wsBroadcastLoop()
 	go statusBroadcastLoop()
-	go sendBufferedLogs()
+	go sendBufferedLogs(logManager)
+
+	if *devMode {
+		log.Println("[dev mode] Serving web files from ./web directory")
+		http.Handle("/", http.FileServer(http.Dir("web")))
+	} else {
+		http.Handle("/", http.FileServer(http.FS(webFiles)))
+	}
+	http.HandleFunc("/ws", wsHandler)
+	go func() {
+		log.Println("Web server listening on :8181")
+		if err := http.ListenAndServe(":8181", nil); err != nil {
+			log.Fatalf("Web server error: %v", err)
+		}
+	}()
 
 	for {
 		line, err := reader.ReadString('\n')
@@ -110,66 +143,106 @@ func main() {
 
 		var raw map[string]any
 		if err := json.Unmarshal([]byte(line), &raw); err == nil {
-			idCounter++
-			id := idCounter
-			flat := make(map[string]any)
-			flattenMap(&raw, flat, "")
-
-			logStoreMu.Lock()
-			logStore[id] = LogEntry{
-				id:  id,
-				Raw: raw,
-			}
-			logOrder = append(logOrder, id)
-			updateIndex(id, flat)
-
-			// Enforce maxLogs
-			enforeMaxLogs()
-			logStoreMu.Unlock()
-
-			logBufferMu.Lock()
-			logBuffer = append(logBuffer, raw)
-			logBufferMu.Unlock()
+			logManager.AddLogEntry(raw)
 		}
 		// else: not JSON, just echo
 	}
 }
 
 // ============================================================================
-// Log Storage and Filtering Functions
+// LogManager Constructor and Methods
 // ============================================================================
 
-// returns the last n log entries
-func getLastLogs(n int) []map[string]any {
-	logStoreMu.RLock()
-	defer logStoreMu.RUnlock()
+func NewLogManager(maxIndexValues, maxLogs, maxIndexValueLength int) *LogManager {
+	return &LogManager{
+		logOrder:            []uint{},
+		logStore:            make(map[uint]LogEntry),
+		logBuffer:           []map[string]any{},
+		index:               make(map[string]map[string][]uint),
+		blacklist:           make(map[string]bool),
+		maxIndexValues:      maxIndexValues,
+		maxLogs:             maxLogs,
+		maxIndexValueLength: maxIndexValueLength,
+		idCounter:           0,
+	}
+}
+
+func (lm *LogManager) AddLogEntry(raw map[string]any) uint {
+	lm.idCounterMu.Lock()
+	lm.idCounter++
+	id := lm.idCounter
+	lm.idCounterMu.Unlock()
+
+	flat := make(map[string]any)
+	flattenMap(&raw, flat, "")
+
+	lm.logStoreMu.Lock()
+	lm.logStore[id] = LogEntry{
+		id:  id,
+		Raw: raw,
+	}
+	lm.logOrder = append(lm.logOrder, id)
+	lm.updateIndex(id, flat)
+	lm.enforceMaxLogs()
+	lm.logStoreMu.Unlock()
+
+	lm.logBufferMu.Lock()
+	lm.logBuffer = append(lm.logBuffer, raw)
+	lm.logBufferMu.Unlock()
+
+	return id
+}
+
+func (lm *LogManager) GetAndClearBufferedLogs() BufferedLogsResult {
+	lm.logBufferMu.Lock()
+	defer lm.logBufferMu.Unlock()
+
+	if len(lm.logBuffer) == 0 {
+		return BufferedLogsResult{HasLogs: false}
+	}
+
+	result := BufferedLogsResult{
+		Logs:        make([]map[string]any, len(lm.logBuffer)),
+		IndexCounts: lm.GetIndexCounts(),
+		HasLogs:     true,
+	}
+	copy(result.Logs, lm.logBuffer)
+	lm.logBuffer = lm.logBuffer[:0]
+
+	return result
+}
+
+// GetLastLogs returns the last n log entries
+func (lm *LogManager) GetLastLogs(n int) []map[string]any {
+	lm.logStoreMu.RLock()
+	defer lm.logStoreMu.RUnlock()
 
 	res := []map[string]any{}
 	start := 0
-	if len(logOrder) > n {
-		start = len(logOrder) - n
+	if len(lm.logOrder) > n {
+		start = len(lm.logOrder) - n
 	}
-	for _, uuid := range logOrder[start:] {
-		if entry, ok := logStore[uuid]; ok {
+	for _, uuid := range lm.logOrder[start:] {
+		if entry, ok := lm.logStore[uuid]; ok {
 			res = append(res, entry.Raw)
 		}
 	}
 	return res
 }
 
-// returns filtered logs based on filters and search term
-func searchLogs(payload SearchPayload, maxLogs int) []map[string]any {
-	logStoreMu.RLock()
-	defer logStoreMu.RUnlock()
+// SearchLogs returns filtered logs based on filters and search term
+func (lm *LogManager) SearchLogs(payload SearchPayload, maxLogs int) []map[string]any {
+	lm.logStoreMu.RLock()
+	defer lm.logStoreMu.RUnlock()
 
 	result := []map[string]any{}
 	count := 0
 
 	// Start from the end (most recent logs)
-	for i := len(logOrder) - 1; i >= 0 && count < maxLogs; i-- {
-		entryId := logOrder[i]
-		if entry, ok := logStore[entryId]; ok {
-			if logMatches(&entry.Raw, &payload) {
+	for i := len(lm.logOrder) - 1; i >= 0 && count < maxLogs; i-- {
+		entryId := lm.logOrder[i]
+		if entry, ok := lm.logStore[entryId]; ok {
+			if lm.logMatches(&entry.Raw, &payload) {
 				result = append([]map[string]any{entry.Raw}, result...)
 				count++
 			}
@@ -179,12 +252,16 @@ func searchLogs(payload SearchPayload, maxLogs int) []map[string]any {
 	return result
 }
 
-func logMatches(raw *map[string]any, payload *SearchPayload) bool {
-	return logMatchesFilter(raw, &payload.Filters) && logMatchesSearch(raw, payload.SearchTerm)
+func (lm *LogManager) LogMatches(raw *map[string]any, payload *SearchPayload) bool {
+	return lm.logMatches(raw, payload)
 }
 
-// checks if a log entry matches the given filters
-func logMatchesFilter(raw *map[string]any, filter *map[string][]string) bool {
+func (lm *LogManager) logMatches(raw *map[string]any, payload *SearchPayload) bool {
+	return lm.logMatchesFilter(raw, &payload.Filters) && lm.logMatchesSearch(raw, payload.SearchTerm)
+}
+
+// logMatchesFilter checks if a log entry matches the given filters
+func (lm *LogManager) logMatchesFilter(raw *map[string]any, filter *map[string][]string) bool {
 	if filter == nil {
 		return true
 	}
@@ -200,8 +277,8 @@ func logMatchesFilter(raw *map[string]any, filter *map[string][]string) bool {
 	return true
 }
 
-// checks if a log entry matches the search term
-func logMatchesSearch(raw *map[string]any, searchTerm string) bool {
+// logMatchesSearch checks if a log entry matches the search term
+func (lm *LogManager) logMatchesSearch(raw *map[string]any, searchTerm string) bool {
 	if searchTerm == "" {
 		return true
 	}
@@ -220,51 +297,47 @@ func logMatchesSearch(raw *map[string]any, searchTerm string) bool {
 	return false
 }
 
-// enforces the maximum number of stored logs
-func enforeMaxLogs() {
-	if len(logOrder) > maxLogs {
-		oldest := logOrder[0]
-		logOrder = logOrder[1:]
-		if entry, ok := logStore[oldest]; ok {
+// enforceMaxLogs enforces the maximum number of stored logs
+func (lm *LogManager) enforceMaxLogs() {
+	if len(lm.logOrder) > lm.maxLogs {
+		oldest := lm.logOrder[0]
+		lm.logOrder = lm.logOrder[1:]
+		if entry, ok := lm.logStore[oldest]; ok {
 			flatOld := make(map[string]any)
 			flattenMap(&entry.Raw, flatOld, "")
-			removeFromIndex(oldest, flatOld)
-			delete(logStore, oldest)
+			lm.removeFromIndex(oldest, flatOld)
+			delete(lm.logStore, oldest)
 			// Notify clients with update_index (send full index for now)
 			wsBroadcastMsg(map[string]any{
 				"type":    "update_index",
-				"payload": getIndexCounts(),
+				"payload": lm.GetIndexCounts(),
 			})
 		}
 	}
 }
 
-// ============================================================================
-// Index Management Functions
-// ============================================================================
-
 // updateIndex adds a log entry to the search index
-func updateIndex(entryId uint, flat map[string]any) {
+func (lm *LogManager) updateIndex(entryId uint, flat map[string]any) {
 	for k, v := range flat {
 		valStr := toString(v)
 		if valStr == "" {
 			continue // omit empty values
 		}
-		if len(valStr) > maxIndexValueLength {
+		if len(valStr) > lm.maxIndexValueLength {
 			continue // omit very long values
 		}
-		if blacklist[k] {
+		if lm.blacklist[k] {
 			continue // skip blacklisted properties
 		}
-		if _, ok := index[k]; !ok {
-			index[k] = make(map[string][]uint)
+		if _, ok := lm.index[k]; !ok {
+			lm.index[k] = make(map[string][]uint)
 		}
-		valMap := index[k]
+		valMap := lm.index[k]
 		valMap[valStr] = append(valMap[valStr], entryId)
 		// Blacklist if too many unique values
-		if len(valMap) > maxIndexValues {
-			delete(index, k)
-			blacklist[k] = true
+		if len(valMap) > lm.maxIndexValues {
+			delete(lm.index, k)
+			lm.blacklist[k] = true
 			// Notify websocket clients with drop_index
 			dropMsg := map[string]any{
 				"type":    "drop_index",
@@ -276,13 +349,13 @@ func updateIndex(entryId uint, flat map[string]any) {
 }
 
 // removeFromIndex removes a log entry from the search index
-func removeFromIndex(entryId uint, flat map[string]any) {
+func (lm *LogManager) removeFromIndex(entryId uint, flat map[string]any) {
 	for k, v := range flat {
 		valStr := toString(v)
-		if len(valStr) > maxIndexValueLength {
+		if len(valStr) > lm.maxIndexValueLength {
 			continue // omit very long values
 		}
-		if valMap, ok := index[k]; ok {
+		if valMap, ok := lm.index[k]; ok {
 			if entryIds, ok := valMap[valStr]; ok {
 				// Remove uint from slice
 				newEntryIds := []uint{}
@@ -298,16 +371,16 @@ func removeFromIndex(entryId uint, flat map[string]any) {
 				}
 			}
 			if len(valMap) == 0 {
-				delete(index, k)
+				delete(lm.index, k)
 			}
 		}
 	}
 }
 
-// getIndexCounts returns the count of entries for each indexed property value
-func getIndexCounts() map[string]map[string]int {
+// GetIndexCounts returns the count of entries for each indexed property value
+func (lm *LogManager) GetIndexCounts() map[string]map[string]int {
 	result := make(map[string]map[string]int)
-	for k, valMap := range index {
+	for k, valMap := range lm.index {
 		result[k] = make(map[string]int)
 		for v, entryIds := range valMap {
 			result[k][v] = len(entryIds)
@@ -316,41 +389,54 @@ func getIndexCounts() map[string]map[string]int {
 	return result
 }
 
+// GetLogsCount returns the number of logs currently stored
+func (lm *LogManager) GetLogsCount() int {
+	lm.logStoreMu.RLock()
+	defer lm.logStoreMu.RUnlock()
+	return len(lm.logStore)
+}
+
+// IsBlacklisted returns whether a property is blacklisted
+func (lm *LogManager) IsBlacklisted(property string) bool {
+	return lm.blacklist[property]
+}
+
 // ============================================================================
 // WebSocket Functions
 // ============================================================================
 
-func sendBufferedLogs() {
+func sendBufferedLogs(logManager *LogManager) {
 	for {
 		time.Sleep(100 * time.Millisecond)
-		logBufferMu.Lock()
-		if len(logBuffer) > 0 {
-			// Broadcast add_logs (send only raw log)
-			wsClientsMu.Lock()
-			for _, c := range wsClients {
-				logsToSend := []map[string]any{}
-				for _, l := range logBuffer {
-					if logMatches(&l, &c.searchPayload) {
-						logsToSend = append(logsToSend, l)
-					}
-				}
-				if len(logsToSend) > 0 {
-					wsSend(c, map[string]any{
-						"type":    "add_logs",
-						"payload": logsToSend,
-					})
+
+		result := logManager.GetAndClearBufferedLogs()
+		if !result.HasLogs {
+			continue
+		}
+
+		// Handle WebSocket broadcasting
+		wsClientsMu.Lock()
+		for _, client := range wsClients {
+			logsToSend := []map[string]any{}
+			for _, logEntry := range result.Logs {
+				if logManager.LogMatches(&logEntry, &client.searchPayload) {
+					logsToSend = append(logsToSend, logEntry)
 				}
 			}
-			wsClientsMu.Unlock()
-			logBuffer = []map[string]any{}
-
-			// Broadcast update_index (send full index for now)
-			wsBroadcastMsg(map[string]any{
-				"type":    "update_index",
-				"payload": getIndexCounts(),
-			})
+			if len(logsToSend) > 0 {
+				wsSend(client, map[string]any{
+					"type":    "add_logs",
+					"payload": logsToSend,
+				})
+			}
 		}
-		logBufferMu.Unlock()
+		wsClientsMu.Unlock()
+
+		// Broadcast index update
+		wsBroadcastMsg(map[string]any{
+			"type":    "update_index",
+			"payload": result.IndexCounts,
+		})
 	}
 }
 
@@ -411,13 +497,13 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	// On connect: send set_index and set_logs (unfiltered)
 	setIndex := map[string]any{
 		"type":    "set_index",
-		"payload": getIndexCounts(),
+		"payload": logManager.GetIndexCounts(),
 	}
 	wsSend(client, setIndex)
 
 	setLogs := map[string]any{
 		"type":    "set_logs",
-		"payload": getLastLogs(1000),
+		"payload": logManager.GetLastLogs(1000),
 	}
 	wsSend(client, setLogs)
 
@@ -443,7 +529,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			wsClientsMu.Unlock()
 			// Send set_logs with filtered logs
-			filtered := searchLogs(req.Payload, 1000)
+			filtered := logManager.SearchLogs(req.Payload, 1000)
 			wsSend(client, map[string]any{
 				"type":    "set_logs",
 				"payload": filtered,
@@ -467,15 +553,11 @@ func getStatusMessage() map[string]any {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 
-	logStoreMu.RLock()
-	logsCount := len(logStore)
-	logStoreMu.RUnlock()
-
 	return map[string]any{
 		"type": "set_status",
 		"payload": map[string]any{
 			"allocatedMemory": m.Alloc,
-			"logsStored":      logsCount,
+			"logsStored":      logManager.GetLogsCount(),
 		},
 	}
 }
@@ -483,21 +565,6 @@ func getStatusMessage() map[string]any {
 // ============================================================================
 // Utility Functions
 // ============================================================================
-
-func startWebserver() {
-	if devMode {
-		log.Println("[dev mode] Serving web files from ./web directory")
-		http.Handle("/", http.FileServer(http.Dir("web")))
-	} else {
-		http.Handle("/", http.FileServer(http.FS(webFiles)))
-	}
-	http.HandleFunc("/ws", wsHandler)
-
-	log.Println("Web server listening on :8181")
-	if err := http.ListenAndServe(":8181", nil); err != nil {
-		log.Fatalf("Web server error: %v", err)
-	}
-}
 
 // toString converts any value to its string representation
 func toString(val any) string {

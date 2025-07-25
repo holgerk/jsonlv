@@ -7,7 +7,7 @@ import (
 
 func TestFlattenMap(t *testing.T) {
 	log := map[string]any{
-		"level":   "INFO",
+		"level": "INFO",
 		"context": map[string]any{
 			"requestId": "123",
 		},
@@ -24,9 +24,7 @@ func TestFlattenMap(t *testing.T) {
 }
 
 func TestIndexCreation(t *testing.T) {
-	index = make(map[string]map[string][]uint)
-	blacklist = make(map[string]bool)
-	maxIndexValues = 2 // lower for test
+	lm := NewLogManager(2, 10000, 50) // maxIndexValues=2 for test
 
 	entries := []string{
 		`{"level": "INFO", "user": "alice"}`,
@@ -34,38 +32,33 @@ func TestIndexCreation(t *testing.T) {
 		`{"level": "DEBUG", "user": "carol"}`,
 	}
 
-	for id, entry := range entries {
+	for _, entry := range entries {
 		var raw map[string]any
 		if err := json.Unmarshal([]byte(entry), &raw); err != nil {
 			t.Fatalf("Failed to parse JSON: %v", err)
 		}
-		u := uint(id)
-		flat := make(map[string]any)
-		flattenMap(&raw, flat, "")
-		updateIndex(u, flat)
+		lm.AddLogEntry(raw)
 	}
 
+	indexCounts := lm.GetIndexCounts()
+
 	// 'level' should be blacklisted (3 unique values > maxIndexValues=2)
-	if _, ok := index["level"]; ok {
+	if _, ok := indexCounts["level"]; ok {
 		t.Errorf("Expected 'level' to be blacklisted")
 	}
-	if !blacklist["level"] {
+	if !lm.IsBlacklisted("level") {
 		t.Errorf("Expected 'level' to be blacklisted")
 	}
 
 	// 'user' should be in index with 2 unique values
-	if len(index["user"]) != 2 {
-		t.Errorf("Expected 2 unique users in index, got %d", len(index["user"]))
+	if len(indexCounts["user"]) != 2 {
+		t.Errorf("Expected 2 unique users in index, got %d", len(indexCounts["user"]))
 	}
 }
 
 func TestSetFilterMessage(t *testing.T) {
-	// Reset global state
-	index = make(map[string]map[string][]uint)
-	blacklist = make(map[string]bool)
-	maxIndexValues = 10
-	logStore = make(map[uint]LogEntry)
-	logOrder = []uint{}
+	// Create LogManager instance
+	lm := NewLogManager(10, 10000, 50)
 
 	// Add some test logs
 	testLogs := []string{
@@ -75,17 +68,12 @@ func TestSetFilterMessage(t *testing.T) {
 		`{"level": "INFO", "message": "another message", "user": "charlie"}`,
 	}
 
-	for i, logStr := range testLogs {
+	for _, logStr := range testLogs {
 		var raw map[string]any
 		if err := json.Unmarshal([]byte(logStr), &raw); err != nil {
 			t.Fatalf("Failed to parse JSON: %v", err)
 		}
-		u := uint(i)
-		flat := make(map[string]any)
-		flattenMap(&raw, flat, "")
-		logStore[u] = LogEntry{id: u, Raw: raw}
-		logOrder = append(logOrder, u)
-		updateIndex(u, flat)
+		lm.AddLogEntry(raw)
 	}
 
 	// Test 1: Filter by level
@@ -95,7 +83,7 @@ func TestSetFilterMessage(t *testing.T) {
 				"level": {"INFO"},
 			},
 		}
-		result := searchLogs(payload, 1000)
+		result := lm.SearchLogs(payload, 1000)
 		if len(result) != 2 {
 			t.Errorf("Expected 2 logs with level INFO, got %d", len(result))
 		}
@@ -113,7 +101,7 @@ func TestSetFilterMessage(t *testing.T) {
 				"user": {"alice"},
 			},
 		}
-		result := searchLogs(payload, 1000)
+		result := lm.SearchLogs(payload, 1000)
 		if len(result) != 2 {
 			t.Errorf("Expected 2 logs with user alice, got %d", len(result))
 		}
@@ -132,7 +120,7 @@ func TestSetFilterMessage(t *testing.T) {
 				"user":  {"alice"},
 			},
 		}
-		result := searchLogs(payload, 1000)
+		result := lm.SearchLogs(payload, 1000)
 		if len(result) != 1 {
 			t.Errorf("Expected 1 log with level INFO and user alice, got %d", len(result))
 		}
@@ -149,7 +137,7 @@ func TestSetFilterMessage(t *testing.T) {
 				"level": {"INFO", "ERROR"},
 			},
 		}
-		result := searchLogs(payload, 1000)
+		result := lm.SearchLogs(payload, 1000)
 		if len(result) != 3 {
 			t.Errorf("Expected 3 logs with level INFO or ERROR, got %d", len(result))
 		}
@@ -166,7 +154,7 @@ func TestSetFilterMessage(t *testing.T) {
 		payload := SearchPayload{
 			SearchTerm: "message",
 		}
-		result := searchLogs(payload, 1000)
+		result := lm.SearchLogs(payload, 1000)
 		if len(result) != 4 {
 			t.Errorf("Expected 4 logs containing 'message', got %d", len(result))
 		}
@@ -180,7 +168,7 @@ func TestSetFilterMessage(t *testing.T) {
 				"level": {"INFO"},
 			},
 		}
-		result := searchLogs(payload, 1000)
+		result := lm.SearchLogs(payload, 1000)
 		if len(result) != 2 {
 			t.Errorf("Expected 2 logs with level INFO containing 'message', got %d", len(result))
 		}
@@ -194,7 +182,7 @@ func TestSetFilterMessage(t *testing.T) {
 	// Test 7: No filters (should return all logs)
 	t.Run("No filters", func(t *testing.T) {
 		payload := SearchPayload{}
-		result := searchLogs(payload, 1000)
+		result := lm.SearchLogs(payload, 1000)
 		if len(result) != 4 {
 			t.Errorf("Expected 4 logs with no filters, got %d", len(result))
 		}
@@ -205,7 +193,7 @@ func TestSetFilterMessage(t *testing.T) {
 		payload := SearchPayload{
 			SearchTerm: "",
 		}
-		result := searchLogs(payload, 1000)
+		result := lm.SearchLogs(payload, 1000)
 		if len(result) != 4 {
 			t.Errorf("Expected 4 logs with empty search term, got %d", len(result))
 		}
@@ -218,7 +206,7 @@ func TestSetFilterMessage(t *testing.T) {
 				"level": {"NONEXISTENT"},
 			},
 		}
-		result := searchLogs(payload, 1000)
+		result := lm.SearchLogs(payload, 1000)
 		if len(result) != 0 {
 			t.Errorf("Expected 0 logs with non-existent level, got %d", len(result))
 		}
@@ -229,7 +217,7 @@ func TestSetFilterMessage(t *testing.T) {
 		payload := SearchPayload{
 			SearchTerm: "nonexistent",
 		}
-		result := searchLogs(payload, 1000)
+		result := lm.SearchLogs(payload, 1000)
 		if len(result) != 0 {
 			t.Errorf("Expected 0 logs with non-existent search term, got %d", len(result))
 		}
@@ -237,6 +225,8 @@ func TestSetFilterMessage(t *testing.T) {
 }
 
 func TestLogMatchesFilter(t *testing.T) {
+	lm := NewLogManager(10, 10000, 50)
+
 	// Test log
 	log := map[string]any{
 		"level":   "INFO",
@@ -291,7 +281,8 @@ func TestLogMatchesFilter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := logMatchesFilter(&log, &tt.filter)
+			payload := SearchPayload{Filters: tt.filter}
+			result := lm.LogMatches(&log, &payload)
 			if result != tt.expected {
 				t.Errorf("%v - Expected %v, got %v", tt.name, tt.expected, result)
 			}
@@ -300,6 +291,8 @@ func TestLogMatchesFilter(t *testing.T) {
 }
 
 func TestLogMatchesSearch(t *testing.T) {
+	lm := NewLogManager(10, 10000, 50)
+
 	// Test log
 	log := map[string]any{
 		"level":   "INFO",
@@ -308,7 +301,7 @@ func TestLogMatchesSearch(t *testing.T) {
 		"count":   456,
 		"context": map[string]any{
 			"requestId": "123",
-			"count": 789,
+			"count":     789,
 		},
 	}
 
@@ -371,7 +364,8 @@ func TestLogMatchesSearch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := logMatchesSearch(&log, tt.searchTerm)
+			payload := SearchPayload{SearchTerm: tt.searchTerm}
+			result := lm.LogMatches(&log, &payload)
 			if result != tt.expected {
 				t.Errorf("Expected %v, got %v", tt.expected, result)
 			}
