@@ -13,7 +13,7 @@ func TestFlattenMap(t *testing.T) {
 		},
 	}
 	flat := make(map[string]any)
-	flattenMap(log, flat, "")
+	flattenMap(&log, flat, "")
 
 	if flat["context.requestId"] != "123" {
 		t.Errorf("Expected %v but got %v", "123", flat["context.requestId"])
@@ -41,7 +41,7 @@ func TestIndexCreation(t *testing.T) {
 		}
 		u := uint(id)
 		flat := make(map[string]any)
-		flattenMap(raw, flat, "")
+		flattenMap(&raw, flat, "")
 		updateIndex(u, flat)
 	}
 
@@ -82,7 +82,7 @@ func TestSetFilterMessage(t *testing.T) {
 		}
 		u := uint(i)
 		flat := make(map[string]any)
-		flattenMap(raw, flat, "")
+		flattenMap(&raw, flat, "")
 		logStore[u] = LogEntry{id: u, Raw: raw}
 		logOrder = append(logOrder, u)
 		updateIndex(u, flat)
@@ -90,12 +90,12 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 1: Filter by level
 	t.Run("Filter by level", func(t *testing.T) {
-		payload := SetFilterPayload{
+		payload := SearchPayload{
 			Filters: map[string][]string{
 				"level": {"INFO"},
 			},
 		}
-		result := filterLogsWithSearch(payload, 1000)
+		result := searchLogs(payload, 1000)
 		if len(result) != 2 {
 			t.Errorf("Expected 2 logs with level INFO, got %d", len(result))
 		}
@@ -108,12 +108,12 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 2: Filter by user
 	t.Run("Filter by user", func(t *testing.T) {
-		payload := SetFilterPayload{
+		payload := SearchPayload{
 			Filters: map[string][]string{
 				"user": {"alice"},
 			},
 		}
-		result := filterLogsWithSearch(payload, 1000)
+		result := searchLogs(payload, 1000)
 		if len(result) != 2 {
 			t.Errorf("Expected 2 logs with user alice, got %d", len(result))
 		}
@@ -126,13 +126,13 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 3: Multiple filters (AND logic)
 	t.Run("Multiple filters", func(t *testing.T) {
-		payload := SetFilterPayload{
+		payload := SearchPayload{
 			Filters: map[string][]string{
 				"level": {"INFO"},
 				"user":  {"alice"},
 			},
 		}
-		result := filterLogsWithSearch(payload, 1000)
+		result := searchLogs(payload, 1000)
 		if len(result) != 1 {
 			t.Errorf("Expected 1 log with level INFO and user alice, got %d", len(result))
 		}
@@ -144,12 +144,12 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 4: Multiple values for same property (OR logic)
 	t.Run("Multiple values for same property", func(t *testing.T) {
-		payload := SetFilterPayload{
+		payload := SearchPayload{
 			Filters: map[string][]string{
 				"level": {"INFO", "ERROR"},
 			},
 		}
-		result := filterLogsWithSearch(payload, 1000)
+		result := searchLogs(payload, 1000)
 		if len(result) != 3 {
 			t.Errorf("Expected 3 logs with level INFO or ERROR, got %d", len(result))
 		}
@@ -163,10 +163,10 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 5: Search term
 	t.Run("Search term", func(t *testing.T) {
-		payload := SetFilterPayload{
+		payload := SearchPayload{
 			SearchTerm: "message",
 		}
-		result := filterLogsWithSearch(payload, 1000)
+		result := searchLogs(payload, 1000)
 		if len(result) != 4 {
 			t.Errorf("Expected 4 logs containing 'message', got %d", len(result))
 		}
@@ -174,13 +174,13 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 6: Search term with filter
 	t.Run("Search term with filter", func(t *testing.T) {
-		payload := SetFilterPayload{
+		payload := SearchPayload{
 			SearchTerm: "message",
 			Filters: map[string][]string{
 				"level": {"INFO"},
 			},
 		}
-		result := filterLogsWithSearch(payload, 1000)
+		result := searchLogs(payload, 1000)
 		if len(result) != 2 {
 			t.Errorf("Expected 2 logs with level INFO containing 'message', got %d", len(result))
 		}
@@ -193,8 +193,8 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 7: No filters (should return all logs)
 	t.Run("No filters", func(t *testing.T) {
-		payload := SetFilterPayload{}
-		result := filterLogsWithSearch(payload, 1000)
+		payload := SearchPayload{}
+		result := searchLogs(payload, 1000)
 		if len(result) != 4 {
 			t.Errorf("Expected 4 logs with no filters, got %d", len(result))
 		}
@@ -202,10 +202,10 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 8: Empty search term (should return all logs)
 	t.Run("Empty search term", func(t *testing.T) {
-		payload := SetFilterPayload{
+		payload := SearchPayload{
 			SearchTerm: "",
 		}
-		result := filterLogsWithSearch(payload, 1000)
+		result := searchLogs(payload, 1000)
 		if len(result) != 4 {
 			t.Errorf("Expected 4 logs with empty search term, got %d", len(result))
 		}
@@ -213,12 +213,12 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 9: Non-existent filter (should return no logs)
 	t.Run("Non-existent filter", func(t *testing.T) {
-		payload := SetFilterPayload{
+		payload := SearchPayload{
 			Filters: map[string][]string{
 				"level": {"NONEXISTENT"},
 			},
 		}
-		result := filterLogsWithSearch(payload, 1000)
+		result := searchLogs(payload, 1000)
 		if len(result) != 0 {
 			t.Errorf("Expected 0 logs with non-existent level, got %d", len(result))
 		}
@@ -226,10 +226,10 @@ func TestSetFilterMessage(t *testing.T) {
 
 	// Test 10: Non-existent search term (should return no logs)
 	t.Run("Non-existent search term", func(t *testing.T) {
-		payload := SetFilterPayload{
+		payload := SearchPayload{
 			SearchTerm: "nonexistent",
 		}
-		result := filterLogsWithSearch(payload, 1000)
+		result := searchLogs(payload, 1000)
 		if len(result) != 0 {
 			t.Errorf("Expected 0 logs with non-existent search term, got %d", len(result))
 		}
@@ -291,7 +291,7 @@ func TestLogMatchesFilter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := logMatchesFilter(log, tt.filter)
+			result := logMatchesFilter(&log, &tt.filter)
 			if result != tt.expected {
 				t.Errorf("%v - Expected %v, got %v", tt.name, tt.expected, result)
 			}
@@ -371,7 +371,7 @@ func TestLogMatchesSearch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := logMatchesSearch(log, tt.searchTerm)
+			result := logMatchesSearch(&log, tt.searchTerm)
 			if result != tt.expected {
 				t.Errorf("Expected %v, got %v", tt.expected, result)
 			}

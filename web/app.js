@@ -134,7 +134,7 @@ function sendFilterRequest() {
     payload.searchTerm = searchTerm.trim();
   }
   if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "set_filter", payload: payload }));
+    ws.send(JSON.stringify({ type: "set_search", payload: payload }));
   }
 }
 

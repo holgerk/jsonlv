@@ -35,16 +35,15 @@ type LogEntry struct {
 	Raw map[string]any
 }
 
-type SetFilterPayload struct {
+type SearchPayload struct {
 	SearchTerm string              `json:"searchTerm"`
 	Filters    map[string][]string `json:"filters"`
 }
 
 type wsClient struct {
-	conn       *websocket.Conn
-	filter     map[string][]string
-	searchTerm string
-	writeMu    sync.Mutex
+	conn          *websocket.Conn
+	searchPayload SearchPayload
+	writeMu       sync.Mutex
 }
 
 // ============================================================================
@@ -53,14 +52,16 @@ type wsClient struct {
 
 // Index structure: map[propertyKey][propertyValue][]uuid
 var (
-	logStore            = make(map[uint]LogEntry)
 	logOrder            = []uint{}
+	logStore            = make(map[uint]LogEntry)
+	logStoreMu          sync.RWMutex
+	logBuffer           = []map[string]any{}
+	logBufferMu         sync.RWMutex
 	index               = make(map[string]map[string][]uint)
 	blacklist           = make(map[string]bool)
 	maxIndexValues      = 10
 	maxLogs             = 10000
 	maxIndexValueLength = 50 // default, can be overridden by flag
-	logStoreMu          sync.RWMutex
 	idCounter           = uint(0)
 )
 
@@ -105,6 +106,34 @@ func main() {
 		}
 	}()
 
+	go func() {
+		for {
+			time.Sleep(100 * time.Millisecond)
+			logBufferMu.Lock()
+			if len(logBuffer) > 0 {
+				// Broadcast add_logs (send only raw log)
+				wsClientsMu.Lock()
+				for _, c := range wsClients {
+					logsToSend := []map[string]any{}
+					for _, l := range logBuffer {
+						if logMatches(&l, &c.searchPayload) {
+							logsToSend = append(logsToSend, l)
+						}
+					}
+					if len(logsToSend) > 0 {
+						wsSend(c, map[string]any{
+							"type":    "add_logs",
+							"payload": logsToSend,
+						})
+					}
+				}
+				wsClientsMu.Unlock()
+				logBuffer = []map[string]any{}
+			}
+			logBufferMu.Unlock()
+		}
+	}()
+
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
@@ -122,7 +151,7 @@ func main() {
 			idCounter++
 			id := idCounter
 			flat := make(map[string]any)
-			flattenMap(raw, flat, "")
+			flattenMap(&raw, flat, "")
 
 			logStoreMu.Lock()
 			logStore[id] = LogEntry{
@@ -136,17 +165,9 @@ func main() {
 			enforeMaxLogs()
 			logStoreMu.Unlock()
 
-			// Broadcast add_logs (send only raw log)
-			wsClientsMu.Lock()
-			for _, c := range wsClients {
-				if (logMatchesFilter(raw, c.filter)) && logMatchesSearch(raw, c.searchTerm) {
-					wsSend(c, map[string]any{
-						"type":    "add_logs",
-						"payload": []map[string]any{raw},
-					})
-				}
-			}
-			wsClientsMu.Unlock()
+			logBufferMu.Lock()
+			logBuffer = append(logBuffer, raw)
+			logBufferMu.Unlock()
 
 			// Broadcast update_index (send full index for now)
 			wsBroadcastMsg(map[string]any{
@@ -159,46 +180,105 @@ func main() {
 }
 
 // ============================================================================
-// Utility Functions
+// Log Storage and Filtering Functions
 // ============================================================================
 
-// toString converts any value to its string representation
-func toString(val any) string {
-	switch v := val.(type) {
-	case string:
-		return v
-	case fmt.Stringer:
-		return v.String()
-	case float64:
-		return strconv.FormatFloat(v, 'f', -1, 64)
-	case float32:
-		return fmt.Sprintf("%g", v)
-	case int, int8, int16, int32, int64:
-		return fmt.Sprintf("%d", v)
-	case uint, uint8, uint16, uint32, uint64:
-		return fmt.Sprintf("%d", v)
-	case bool:
-		return fmt.Sprintf("%t", v)
-	case nil:
-		return ""
-	default:
-		return fmt.Sprintf("%v", v)
+// returns the last n log entries
+func getLastLogs(n int) []map[string]any {
+	logStoreMu.RLock()
+	defer logStoreMu.RUnlock()
+
+	res := []map[string]any{}
+	start := 0
+	if len(logOrder) > n {
+		start = len(logOrder) - n
 	}
+	for _, uuid := range logOrder[start:] {
+		if entry, ok := logStore[uuid]; ok {
+			res = append(res, entry.Raw)
+		}
+	}
+	return res
 }
 
-// flattenMap flattens a nested map using dot notation
-func flattenMap(data map[string]any, out map[string]any, prefix string) {
-	for k, v := range data {
-		key := k
-		if prefix != "" {
-			key = prefix + "." + k
-		}
+// returns filtered logs based on filters and search term
+func searchLogs(payload SearchPayload, maxLogs int) []map[string]any {
+	logStoreMu.RLock()
+	defer logStoreMu.RUnlock()
 
-		switch val := v.(type) {
-		case map[string]any:
-			flattenMap(val, out, key)
-		default:
-			out[key] = val
+	result := []map[string]any{}
+	count := 0
+
+	// Start from the end (most recent logs)
+	for i := len(logOrder) - 1; i >= 0 && count < maxLogs; i-- {
+		entryId := logOrder[i]
+		if entry, ok := logStore[entryId]; ok {
+			if logMatches(&entry.Raw, &payload) {
+				result = append([]map[string]any{entry.Raw}, result...)
+				count++
+			}
+		}
+	}
+
+	return result
+}
+
+func logMatches(raw *map[string]any, payload *SearchPayload) bool {
+	return logMatchesFilter(raw, &payload.Filters) && logMatchesSearch(raw, payload.SearchTerm)
+}
+
+// checks if a log entry matches the given filters
+func logMatchesFilter(raw *map[string]any, filter *map[string][]string) bool {
+	if filter == nil {
+		return true
+	}
+	flat := make(map[string]any)
+	flattenMap(raw, flat, "")
+	for k, vals := range *filter {
+		valStr := toString(flat[k])
+		match := slices.Contains(vals, valStr)
+		if !match {
+			return false
+		}
+	}
+	return true
+}
+
+// checks if a log entry matches the search term
+func logMatchesSearch(raw *map[string]any, searchTerm string) bool {
+	if searchTerm == "" {
+		return true
+	}
+	searchTerm = strings.ToLower(searchTerm)
+
+	// Search in flattened structure
+	flat := make(map[string]any)
+	flattenMap(raw, flat, "")
+
+	for _, value := range flat {
+		valueStr := toString(value)
+		if strings.Contains(strings.ToLower(valueStr), searchTerm) {
+			return true
+		}
+	}
+	return false
+}
+
+// enforces the maximum number of stored logs
+func enforeMaxLogs() {
+	if len(logOrder) > maxLogs {
+		oldest := logOrder[0]
+		logOrder = logOrder[1:]
+		if entry, ok := logStore[oldest]; ok {
+			flatOld := make(map[string]any)
+			flattenMap(&entry.Raw, flatOld, "")
+			removeFromIndex(oldest, flatOld)
+			delete(logStore, oldest)
+			// Notify clients with update_index (send full index for now)
+			wsBroadcastMsg(map[string]any{
+				"type":    "update_index",
+				"payload": getIndexCounts(),
+			})
 		}
 	}
 }
@@ -281,106 +361,6 @@ func getIndexCounts() map[string]map[string]int {
 }
 
 // ============================================================================
-// Log Storage and Filtering Functions
-// ============================================================================
-
-// getLastLogs returns the last n log entries
-func getLastLogs(n int) []map[string]any {
-	logStoreMu.RLock()
-	defer logStoreMu.RUnlock()
-
-	res := []map[string]any{}
-	start := 0
-	if len(logOrder) > n {
-		start = len(logOrder) - n
-	}
-	for _, uuid := range logOrder[start:] {
-		if entry, ok := logStore[uuid]; ok {
-			res = append(res, entry.Raw)
-		}
-	}
-	return res
-}
-
-// logMatchesFilter checks if a log entry matches the given filters
-func logMatchesFilter(raw map[string]any, filter map[string][]string) bool {
-	if filter == nil {
-		return true
-	}
-	flat := make(map[string]any)
-	flattenMap(raw, flat, "")
-	for k, vals := range filter {
-		valStr := toString(flat[k])
-		match := slices.Contains(vals, valStr)
-		if !match {
-			return false
-		}
-	}
-	return true
-}
-
-// logMatchesSearch checks if a log entry matches the search term
-func logMatchesSearch(raw map[string]any, searchTerm string) bool {
-	if searchTerm == "" {
-		return true
-	}
-	searchTerm = strings.ToLower(searchTerm)
-
-	// Search in flattened structure
-	flat := make(map[string]any)
-	flattenMap(raw, flat, "")
-
-	for _, value := range flat {
-		valueStr := toString(value)
-		if strings.Contains(strings.ToLower(valueStr), searchTerm) {
-			return true
-		}
-	}
-	return false
-}
-
-// filterLogsWithSearch returns filtered logs based on filters and search term
-func filterLogsWithSearch(payload SetFilterPayload, n int) []map[string]any {
-	logStoreMu.RLock()
-	defer logStoreMu.RUnlock()
-
-	result := []map[string]any{}
-	count := 0
-
-	// Start from the end (most recent logs)
-	for i := len(logOrder) - 1; i >= 0 && count < n; i-- {
-		entryId := logOrder[i]
-		if entry, ok := logStore[entryId]; ok {
-			if logMatchesFilter(entry.Raw, payload.Filters) && logMatchesSearch(entry.Raw, payload.SearchTerm) {
-				result = append([]map[string]any{entry.Raw}, result...)
-				count++
-			}
-		}
-	}
-
-	return result
-}
-
-// enforeMaxLogs enforces the maximum number of stored logs
-func enforeMaxLogs() {
-	if len(logOrder) > maxLogs {
-		oldest := logOrder[0]
-		logOrder = logOrder[1:]
-		if entry, ok := logStore[oldest]; ok {
-			flatOld := make(map[string]any)
-			flattenMap(entry.Raw, flatOld, "")
-			removeFromIndex(oldest, flatOld)
-			delete(logStore, oldest)
-			// Notify clients with update_index (send full index for now)
-			wsBroadcastMsg(map[string]any{
-				"type":    "update_index",
-				"payload": getIndexCounts(),
-			})
-		}
-	}
-}
-
-// ============================================================================
 // WebSocket Functions
 // ============================================================================
 
@@ -433,7 +413,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.Close()
-	client := &wsClient{conn: conn, filter: nil}
+	client := &wsClient{conn: conn}
 	wsClientsMu.Lock()
 	wsClients[conn] = client
 	wsClientsMu.Unlock()
@@ -461,20 +441,19 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			wsClientsMu.Unlock()
 			break
 		}
-		// Handle set_filter
+		// Handle set_search
 		var req struct {
-			Type    string           `json:"type"`
-			Payload SetFilterPayload `json:"payload"`
+			Type    string        `json:"type"`
+			Payload SearchPayload `json:"payload"`
 		}
-		if err := json.Unmarshal(msg, &req); err == nil && req.Type == "set_filter" {
+		if err := json.Unmarshal(msg, &req); err == nil && req.Type == "set_search" {
 			wsClientsMu.Lock()
 			if c, ok := wsClients[conn]; ok {
-				c.filter = req.Payload.Filters
-				c.searchTerm = req.Payload.SearchTerm
+				c.searchPayload = req.Payload
 			}
 			wsClientsMu.Unlock()
 			// Send set_logs with filtered logs
-			filtered := filterLogsWithSearch(req.Payload, 1000)
+			filtered := searchLogs(req.Payload, 1000)
 			wsSend(client, map[string]any{
 				"type":    "set_logs",
 				"payload": filtered,
@@ -508,5 +487,46 @@ func getStatusMessage() map[string]any {
 			"allocatedMemory": m.Alloc,
 			"logsStored":      logsCount,
 		},
+	}
+}
+
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
+// toString converts any value to its string representation
+func toString(val any) string {
+	switch v := val.(type) {
+	case string:
+		return v
+	case fmt.Stringer:
+		return v.String()
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64)
+	case float32:
+		return fmt.Sprintf("%g", v)
+	case int, int8, int16, int32, int64:
+		return fmt.Sprintf("%d", v)
+	case uint, uint8, uint16, uint32, uint64:
+		return fmt.Sprintf("%d", v)
+	case bool:
+		return fmt.Sprintf("%t", v)
+	case nil:
+		return ""
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+// flattenMap flattens a nested map using dot notation
+func flattenMap(data *map[string]any, out map[string]any, prefix string) {
+	for k, v := range *data {
+		key := prefix + k
+		switch val := v.(type) {
+		case map[string]any:
+			flattenMap(&val, out, key+".")
+		default:
+			out[key] = val
+		}
 	}
 }

@@ -133,9 +133,9 @@ A command-line and web-based real-time log inspection tool written in Go.
 
 #### Client to server
 
-- **`set_filter`:**
-  - Payload: `{ type: "set_filter", payload: { filters: { [property]: [values...] }, searchTerm?: string } }`
-  - Result: 
+- **`set_search`:**
+  - Payload: `{ type: "set_search", payload: { filters: { [property]: [values...] }, searchTerm?: string } }`
+  - Result:
     - Server responds with `set_logs` (last 1000 logs matching filters and search term).
     - Server stores the actual filter in `actualFilter` property
   - The `filters` property contains the property-based filters
@@ -145,7 +145,7 @@ A command-line and web-based real-time log inspection tool written in Go.
 
 - **`set_logs`:**
   - Payload: `{ type: "set_logs", payload: [records...] }`
-  - Example: 
+  - Example:
     ```json
     {
       "type": "set_logs",
@@ -169,7 +169,7 @@ A command-line and web-based real-time log inspection tool written in Go.
     ```
   - Result: Clients removes all log entries from display und displays the given log records
   - Implementation Implications:
-      - When sending set_logs or add_logs, the server should send only the original log data 
+      - When sending set_logs or add_logs, the server should send only the original log data
         (the Raw field of LogEntry), not the UUID or Flat fields.
       - The payload should be an array of these raw log objects.
 
@@ -178,7 +178,7 @@ A command-line and web-based real-time log inspection tool written in Go.
   - Result: Clients adds the given log records to display
 
 - **Live Streaming:**
-  - **`add_logs`:** 
+  - **`add_logs`:**
     - Each new log line broadcasted
     - If `actualFilter` is set then the log line is only broadcasted if the filter matches the log line
   - **`update_index`:** Index updates sent with only changed properties and counts.
@@ -241,75 +241,75 @@ A command-line and web-based real-time log inspection tool written in Go.
 
 The status view is part of the top panel in the turbo-tail frontend UI. It provides users with real-time information about the current state of the log streaming and filtering system.
 
-- **Location:**  
+- **Location:**
   The status view is located in the top panel of the UI, above the filter and log panels.
 
-- **Purpose:**  
+- **Purpose:**
   The status view provides users with real-time information about the current state of the log streaming and filtering system.
 
 - **Features:**
-  - **Connection Status:**  
+  - **Connection Status:**
     Indicates whether the frontend is connected to the backend WebSocket (e.g., “Connected”, “Reconnecting”, “Disconnected”).
-  - **Log Stream Status:**  
+  - **Log Stream Status:**
     Shows if logs are actively streaming in, paused, or if there is a backlog.
-  - **Log Count:**  
+  - **Log Count:**
     Displays the total number of logs currently loaded or visible (e.g., “Showing 1,000 of 10,000 logs”).
-  - **Active Filters:**  
+  - **Active Filters:**
     Summarizes which filters are currently applied, possibly as a list or a compact summary (e.g., “Filters: level_name=ERROR, channel=testing”).
-  - **Search Bar:**  
+  - **Search Bar:**
     A text input field that allows users to search for specific terms across all log properties. As the user types, it automatically sends search requests to filter logs in real-time.
-  - **Search/Filter Reset:**  
+  - **Search/Filter Reset:**
     May include a button to clear all filters or reset the view to show all logs.
-  - **Fullscreen Toggle:**  
+  - **Fullscreen Toggle:**
     A button to toggle fullscreen mode for the entire application, maximizing the log viewing experience.
-  - **Other Status Indicators:**  
+  - **Other Status Indicators:**
     Could include information such as the time of the last received log, backend version, or error/warning messages if something goes wrong.
 
-- **User Experience:**  
+- **User Experience:**
   The status view helps users quickly understand what they are looking at, whether the system is up-to-date, and what filters or search terms are currently affecting the log display.
 
-**Summary:**  
+**Summary:**
 The status view is a compact, always-visible area at the top of the UI that keeps users informed about connection health, log counts, active filters, and overall system state, ensuring transparency and confidence while inspecting logs in real time.
 
 ### Filter View
 
 The filter view is the left panel of the turbo-tail frontend UI. Here’s how it works and what it looks like:
 
-- **One filter box per JSON property:**  
+- **One filter box per JSON property:**
   For every property found in the incoming JSON logs (including nested properties, which are shown in dot notation like `context.bindings.userId`), a filter box is displayed.
 
-- **Values displayed with document count:**  
+- **Values displayed with document count:**
   Each filter box lists all the unique values seen for that property, along with a count of how many log entries have that value. For example, under `level_name` you might see:
   - INFO (12)
   - ERROR (3)
 
-- **User can select multiple filters:**  
+- **User can select multiple filters:**
   - You can select multiple values within a single property (e.g., both INFO and ERROR under `level_name`). This acts as an OR filter for that property.
   - You can also select filters across different properties (e.g., channel: "testing" and level_name: "ERROR"). This acts as an AND filter across properties.
 
-- **Selected filters are highlighted:**  
+- **Selected filters are highlighted:**
   When you select a filter value, it is visually highlighted to indicate it is active.
 
-- **Filter logic:**  
+- **Filter logic:**
   - Multiple values for one property: OR logic (matches any selected value for that property)
   - Filters across different properties: AND logic (log must match all selected properties)
 
-- **Dynamic updates:**  
+- **Dynamic updates:**
   - As new logs arrive, the filter boxes and their counts update in real time.
   - If a property is removed from the index (e.g., because it has too many unique values), its filter box disappears.
 
-- **Interaction:**  
+- **Interaction:**
   - When you select or deselect filters, the displayed logs update to show only those matching the current filter selection.
   - The filter view is always in sync with the current state of the log index.
 
-**Summary:**  
+**Summary:**
 The filter view is an interactive, real-time panel that lets you quickly narrow down logs by property and value, with intuitive multi-select and live-updating counts, making it easy to focus on relevant log entries.
 
 ### Log View
 
 The log view is the right panel of the turbo-tail frontend UI. It displays the log entries in real time and provides a user-friendly interface for inspecting log data.
 
-- **Location:**  
+- **Location:**
   The log view occupies the right panel of the UI, next to the filter view.
 
 - **Display:**
@@ -340,7 +340,7 @@ The log view is the right panel of the turbo-tail frontend UI. It displays the l
 - **User Experience:**
   The log view is designed for clarity and speed, allowing users to monitor, search, and inspect logs as they stream in. The combination of real-time updates, syntax highlighting, and filter integration makes it easy to focus on relevant log entries and quickly spot issues or patterns.
 
-**Summary:**  
+**Summary:**
 The log view is a dynamic, real-time display of JSON logs, optimized for readability and efficient inspection, tightly integrated with the filter and status views for a seamless log analysis experience.
 
 ### Features
@@ -392,3 +392,13 @@ The following filter boxes appear:
 - `context.bindings.userId`
 - `level`
 - `level_name`
+
+---
+
+# Todos
+
+- buffer messages
+- reduce memory consumption
+- highlight matches in json
+- persist ui settings (filter, search, resizer positon) in url
+- limit number of messages in view
