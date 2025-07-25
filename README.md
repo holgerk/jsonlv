@@ -397,8 +397,8 @@ The following filter boxes appear:
 
 # Todos
 
-- buffer messages
-- reduce memory consumption
-- highlight matches in json
-- persist ui settings (filter, search, resizer positon) in url
 - limit number of messages in view
+- highlight matches in json
+- wildcard search
+- reduce memory consumption
+- persist ui settings (filter, search, resizer positon) in url

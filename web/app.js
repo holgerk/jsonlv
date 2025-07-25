@@ -400,7 +400,6 @@ function setupResizer() {
 
 function setupExpandJson() {
   document.addEventListener("click", (e) => {
-    console.debug("click", e.target);
     const isPropertyName = e.target.classList.contains("property-name");
     const hasObjectValue = e.target.classList.contains("object");
     if (isPropertyName && hasObjectValue) {

@@ -50,19 +50,21 @@ type wsClient struct {
 // Global Variables
 // ============================================================================
 
-// Index structure: map[propertyKey][propertyValue][]uuid
 var (
-	logOrder            = []uint{}
-	logStore            = make(map[uint]LogEntry)
-	logStoreMu          sync.RWMutex
-	logBuffer           = []map[string]any{}
-	logBufferMu         sync.RWMutex
-	index               = make(map[string]map[string][]uint)
-	blacklist           = make(map[string]bool)
-	maxIndexValues      = 10
-	maxLogs             = 10000
+	logOrder    = []uint{}
+	logStore    = make(map[uint]LogEntry)
+	logStoreMu  sync.RWMutex
+	logBuffer   = []map[string]any{}
+	logBufferMu sync.RWMutex
+	// structure: map[propertyKey][propertyValue][]id
+	index          = make(map[string]map[string][]uint)
+	blacklist      = make(map[string]bool)
+	maxIndexValues = 10
+	maxLogs        = 10000
+	idCounter      = uint(0)
+	// flags
 	maxIndexValueLength = 50 // default, can be overridden by flag
-	idCounter           = uint(0)
+	devMode             = false
 )
 
 var upgrader = websocket.Upgrader{
@@ -83,56 +85,16 @@ var webFiles, _ = fs.Sub(webFS, "web")
 // ============================================================================
 
 func main() {
-	devMode := flag.Bool("dev", false, "Serve web files from filesystem (for development)")
+	flag.BoolVar(&devMode, "dev", false, "Serve web files from filesystem (for development)")
 	flag.IntVar(&maxIndexValueLength, "maxIndexValueLength", 50, "Maximum length of values to index (omit longer values)")
 	flag.Parse()
 
 	reader := bufio.NewReader(os.Stdin)
 
+	go startWebserver()
 	go wsBroadcastLoop()
 	go statusBroadcastLoop()
-
-	if *devMode {
-		log.Println("[dev mode] Serving web files from ./web directory")
-		http.Handle("/", http.FileServer(http.Dir("web")))
-	} else {
-		http.Handle("/", http.FileServer(http.FS(webFiles)))
-	}
-	http.HandleFunc("/ws", wsHandler)
-	go func() {
-		log.Println("Web server listening on :8181")
-		if err := http.ListenAndServe(":8181", nil); err != nil {
-			log.Fatalf("Web server error: %v", err)
-		}
-	}()
-
-	go func() {
-		for {
-			time.Sleep(100 * time.Millisecond)
-			logBufferMu.Lock()
-			if len(logBuffer) > 0 {
-				// Broadcast add_logs (send only raw log)
-				wsClientsMu.Lock()
-				for _, c := range wsClients {
-					logsToSend := []map[string]any{}
-					for _, l := range logBuffer {
-						if logMatches(&l, &c.searchPayload) {
-							logsToSend = append(logsToSend, l)
-						}
-					}
-					if len(logsToSend) > 0 {
-						wsSend(c, map[string]any{
-							"type":    "add_logs",
-							"payload": logsToSend,
-						})
-					}
-				}
-				wsClientsMu.Unlock()
-				logBuffer = []map[string]any{}
-			}
-			logBufferMu.Unlock()
-		}
-	}()
+	go sendBufferedLogs()
 
 	for {
 		line, err := reader.ReadString('\n')
@@ -168,12 +130,6 @@ func main() {
 			logBufferMu.Lock()
 			logBuffer = append(logBuffer, raw)
 			logBufferMu.Unlock()
-
-			// Broadcast update_index (send full index for now)
-			wsBroadcastMsg(map[string]any{
-				"type":    "update_index",
-				"payload": getIndexCounts(),
-			})
 		}
 		// else: not JSON, just echo
 	}
@@ -364,6 +320,40 @@ func getIndexCounts() map[string]map[string]int {
 // WebSocket Functions
 // ============================================================================
 
+func sendBufferedLogs() {
+	for {
+		time.Sleep(100 * time.Millisecond)
+		logBufferMu.Lock()
+		if len(logBuffer) > 0 {
+			// Broadcast add_logs (send only raw log)
+			wsClientsMu.Lock()
+			for _, c := range wsClients {
+				logsToSend := []map[string]any{}
+				for _, l := range logBuffer {
+					if logMatches(&l, &c.searchPayload) {
+						logsToSend = append(logsToSend, l)
+					}
+				}
+				if len(logsToSend) > 0 {
+					wsSend(c, map[string]any{
+						"type":    "add_logs",
+						"payload": logsToSend,
+					})
+				}
+			}
+			wsClientsMu.Unlock()
+			logBuffer = []map[string]any{}
+
+			// Broadcast update_index (send full index for now)
+			wsBroadcastMsg(map[string]any{
+				"type":    "update_index",
+				"payload": getIndexCounts(),
+			})
+		}
+		logBufferMu.Unlock()
+	}
+}
+
 // wsSend sends a message to a specific WebSocket client
 func wsSend(client *wsClient, msg any) error {
 	data, err := json.Marshal(msg)
@@ -493,6 +483,21 @@ func getStatusMessage() map[string]any {
 // ============================================================================
 // Utility Functions
 // ============================================================================
+
+func startWebserver() {
+	if devMode {
+		log.Println("[dev mode] Serving web files from ./web directory")
+		http.Handle("/", http.FileServer(http.Dir("web")))
+	} else {
+		http.Handle("/", http.FileServer(http.FS(webFiles)))
+	}
+	http.HandleFunc("/ws", wsHandler)
+
+	log.Println("Web server listening on :8181")
+	if err := http.ListenAndServe(":8181", nil); err != nil {
+		log.Fatalf("Web server error: %v", err)
+	}
+}
 
 // toString converts any value to its string representation
 func toString(val any) string {
