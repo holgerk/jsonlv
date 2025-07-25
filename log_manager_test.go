@@ -445,7 +445,7 @@ func TestCallbacks(t *testing.T) {
 	lm2 := NewLogManager(config2)
 
 	// Add 3 logs to trigger removal of oldest
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		raw := map[string]any{"id": i}
 		lm2.AddLogEntry(raw)
 	}
@@ -505,7 +505,7 @@ func TestGetLogsCount(t *testing.T) {
 	}
 
 	// Add some logs
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		lm.AddLogEntry(map[string]any{"id": i})
 	}
 
