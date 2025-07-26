@@ -25,13 +25,8 @@ func TestFlattenMap(t *testing.T) {
 
 func TestIndexCreation(t *testing.T) {
 	// Use custom config with lower maxIndexValues for easier testing
-	config := LogManagerConfig{
-		MaxIndexValues:        2,
-		MaxLogs:               10000,
-		MaxIndexValueLength:   50,
-		UpdateIndexCallback:   func(indexCounts map[string]map[string]int) {},
-		DropIndexKeysCallback: func(droppedKeys []string) {},
-	}
+	config := DefaultLogManagerConfig()
+	config.MaxIndexValues = 2
 	lm := NewLogManager(config)
 
 	entries := []string{
@@ -52,9 +47,6 @@ func TestIndexCreation(t *testing.T) {
 
 	// 'level' should be blacklisted (3 unique values > maxIndexValues=2)
 	if _, ok := indexCounts["level"]; ok {
-		t.Errorf("Expected 'level' to be blacklisted")
-	}
-	if !lm.IsBlacklisted("level") {
 		t.Errorf("Expected 'level' to be blacklisted")
 	}
 

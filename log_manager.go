@@ -311,10 +311,6 @@ func (lm *LogManager) GetLogsCount() int {
 	return len(lm.logStore)
 }
 
-// IsBlacklisted returns whether a property is blacklisted
-func (lm *LogManager) IsBlacklisted(property string) bool {
-	return lm.blacklist[property]
-}
 
 // ============================================================================
 // Utility Functions
