@@ -12,14 +12,19 @@ import (
 // Type Definitions
 // ============================================================================
 
-type LogEntry struct {
-	id  uint
-	Raw map[string]any
+type LogId = uint
+type PropName = string
+type PropValue = string
+type JsonObject = map[string]any
+
+type LogRecord struct {
+	id  LogId
+	Raw JsonObject
 }
 
 type BufferedLogsResult struct {
-	Logs        []map[string]any
-	IndexCounts map[string]map[string]int
+	Logs        []JsonObject
+	IndexCounts map[PropName]map[PropValue]uint
 	HasLogs     bool
 }
 
@@ -27,8 +32,8 @@ type LogManagerConfig struct {
 	MaxIndexValues        int
 	MaxLogs               int
 	MaxIndexValueLength   int
-	UpdateIndexCallback   func(indexCounts map[string]map[string]int)
-	DropIndexKeysCallback func(droppedKeys []string)
+	UpdateIndexCallback   func(indexCounts map[PropName]map[PropValue]uint)
+	DropIndexKeysCallback func(droppedKeys []PropName)
 }
 
 func DefaultLogManagerConfig() LogManagerConfig {
@@ -36,24 +41,24 @@ func DefaultLogManagerConfig() LogManagerConfig {
 		MaxIndexValues:        10,
 		MaxLogs:               10000,
 		MaxIndexValueLength:   50,
-		UpdateIndexCallback:   func(indexCounts map[string]map[string]int) {}, // no-op default
-		DropIndexKeysCallback: func(droppedKeys []string) {},                  // no-op default
+		UpdateIndexCallback:   func(indexCounts map[PropName]map[PropValue]uint) {}, // no-op default
+		DropIndexKeysCallback: func(droppedKeys []PropName) {},                  // no-op default
 	}
 }
 
 type LogManager struct {
 	// Storage
-	logOrder   []uint
-	logStore   map[uint]LogEntry
+	logOrder   []LogId
+	logStore   map[LogId]LogRecord
 	logStoreMu sync.RWMutex
 
 	// Buffering
-	logBuffer   []map[string]any
+	logBuffer   []JsonObject
 	logBufferMu sync.RWMutex
 
 	// Indexing
-	index     map[string]map[string][]uint
-	blacklist map[string]bool
+	index     map[PropName]map[PropValue][]LogId
+	blacklist map[PropName]bool
 
 	// Configuration
 	config LogManagerConfig
@@ -69,27 +74,27 @@ type LogManager struct {
 
 func NewLogManager(config LogManagerConfig) *LogManager {
 	return &LogManager{
-		logOrder:  []uint{},
-		logStore:  make(map[uint]LogEntry),
-		logBuffer: []map[string]any{},
-		index:     make(map[string]map[string][]uint),
-		blacklist: make(map[string]bool),
+		logOrder:  []LogId{},
+		logStore:  make(map[LogId]LogRecord),
+		logBuffer: []JsonObject{},
+		index:     make(map[PropName]map[PropValue][]uint),
+		blacklist: make(map[PropName]bool),
 		config:    config,
 		idCounter: 0,
 	}
 }
 
-func (lm *LogManager) AddLogEntry(raw map[string]any) uint {
+func (lm *LogManager) AddLogEntry(raw JsonObject) uint {
 	lm.idCounterMu.Lock()
 	lm.idCounter++
 	id := lm.idCounter
 	lm.idCounterMu.Unlock()
 
-	flat := make(map[string]any)
-	flattenMap(&raw, flat, "")
+	flat := make(map[PropName]any)
+	flattenMap(raw, flat, "")
 
 	lm.logStoreMu.Lock()
-	lm.logStore[id] = LogEntry{
+	lm.logStore[id] = LogRecord{
 		id:  id,
 		Raw: raw,
 	}
@@ -114,7 +119,7 @@ func (lm *LogManager) GetAndClearBufferedLogs() BufferedLogsResult {
 	}
 
 	result := BufferedLogsResult{
-		Logs:        make([]map[string]any, len(lm.logBuffer)),
+		Logs:        make([]JsonObject, len(lm.logBuffer)),
 		IndexCounts: lm.GetIndexCounts(),
 		HasLogs:     true,
 	}
@@ -125,11 +130,11 @@ func (lm *LogManager) GetAndClearBufferedLogs() BufferedLogsResult {
 }
 
 // GetLastLogs returns the last n log entries
-func (lm *LogManager) GetLastLogs(n int) []map[string]any {
+func (lm *LogManager) GetLastLogs(n int) []JsonObject {
 	lm.logStoreMu.RLock()
 	defer lm.logStoreMu.RUnlock()
 
-	res := []map[string]any{}
+	res := []JsonObject{}
 	start := 0
 	if len(lm.logOrder) > n {
 		start = len(lm.logOrder) - n
@@ -143,19 +148,19 @@ func (lm *LogManager) GetLastLogs(n int) []map[string]any {
 }
 
 // SearchLogs returns filtered logs based on filters and search term
-func (lm *LogManager) SearchLogs(payload SearchPayload, maxLogs int) []map[string]any {
+func (lm *LogManager) SearchLogs(payload SearchPayload, maxLogs int) []JsonObject {
 	lm.logStoreMu.RLock()
 	defer lm.logStoreMu.RUnlock()
 
-	result := []map[string]any{}
+	result := []JsonObject{}
 	count := 0
 
 	// Start from the end (most recent logs)
 	for i := len(lm.logOrder) - 1; i >= 0 && count < maxLogs; i-- {
 		entryId := lm.logOrder[i]
 		if entry, ok := lm.logStore[entryId]; ok {
-			if lm.logMatches(&entry.Raw, &payload) {
-				result = append([]map[string]any{entry.Raw}, result...)
+			if lm.logMatches(entry.Raw, &payload) {
+				result = append([]JsonObject{entry.Raw}, result...)
 				count++
 			}
 		}
@@ -164,26 +169,26 @@ func (lm *LogManager) SearchLogs(payload SearchPayload, maxLogs int) []map[strin
 	return result
 }
 
-func (lm *LogManager) FilterLogs(logs []map[string]any, payload SearchPayload) []map[string]any {
-	filteredLogs := []map[string]any{}
+func (lm *LogManager) FilterLogs(logs []JsonObject, payload SearchPayload) []JsonObject {
+	filteredLogs := []JsonObject{}
 	for _, log := range logs {
-		if lm.logMatches(&log, &payload) {
+		if lm.logMatches(log, &payload) {
 			filteredLogs = append(filteredLogs, log)
 		}
 	}
 	return filteredLogs
 }
 
-func (lm *LogManager) logMatches(raw *map[string]any, payload *SearchPayload) bool {
+func (lm *LogManager) logMatches(raw JsonObject, payload *SearchPayload) bool {
 	return lm.logMatchesFilter(raw, &payload.Filters) && lm.logMatchesSearch(raw, payload.SearchTerm)
 }
 
 // logMatchesFilter checks if a log entry matches the given filters
-func (lm *LogManager) logMatchesFilter(raw *map[string]any, filter *map[string][]string) bool {
+func (lm *LogManager) logMatchesFilter(raw JsonObject, filter *map[string][]string) bool {
 	if filter == nil {
 		return true
 	}
-	flat := make(map[string]any)
+	flat := make(JsonObject)
 	flattenMap(raw, flat, "")
 	for k, vals := range *filter {
 		valStr := toString(flat[k])
@@ -196,14 +201,14 @@ func (lm *LogManager) logMatchesFilter(raw *map[string]any, filter *map[string][
 }
 
 // logMatchesSearch checks if a log entry matches the search term
-func (lm *LogManager) logMatchesSearch(raw *map[string]any, searchTerm string) bool {
+func (lm *LogManager) logMatchesSearch(raw JsonObject, searchTerm string) bool {
 	if searchTerm == "" {
 		return true
 	}
 	searchTerm = strings.ToLower(searchTerm)
 
 	// Search in flattened structure
-	flat := make(map[string]any)
+	flat := make(JsonObject)
 	flattenMap(raw, flat, "")
 
 	for _, value := range flat {
@@ -221,8 +226,8 @@ func (lm *LogManager) enforceMaxLogs() {
 		oldest := lm.logOrder[0]
 		lm.logOrder = lm.logOrder[1:]
 		if entry, ok := lm.logStore[oldest]; ok {
-			flatOld := make(map[string]any)
-			flattenMap(&entry.Raw, flatOld, "")
+			flatOld := make(JsonObject)
+			flattenMap(entry.Raw, flatOld, "")
 			lm.removeFromIndex(oldest, flatOld)
 			delete(lm.logStore, oldest)
 			// Notify via callback about index update
@@ -234,7 +239,7 @@ func (lm *LogManager) enforceMaxLogs() {
 }
 
 // addToIndex adds a log entry to the search index
-func (lm *LogManager) addToIndex(entryId uint, flat map[string]any) {
+func (lm *LogManager) addToIndex(entryId uint, flat JsonObject) {
 	for k, v := range flat {
 		valStr := toString(v)
 		if valStr == "" {
@@ -264,7 +269,7 @@ func (lm *LogManager) addToIndex(entryId uint, flat map[string]any) {
 }
 
 // removeFromIndex removes a log entry from the search index
-func (lm *LogManager) removeFromIndex(entryId uint, flat map[string]any) {
+func (lm *LogManager) removeFromIndex(entryId uint, flat JsonObject) {
 	for k, v := range flat {
 		valStr := toString(v)
 		if len(valStr) > lm.config.MaxIndexValueLength {
@@ -293,22 +298,22 @@ func (lm *LogManager) removeFromIndex(entryId uint, flat map[string]any) {
 }
 
 // GetIndexCounts returns the count of entries for each indexed property value
-func (lm *LogManager) GetIndexCounts() map[string]map[string]int {
-	result := make(map[string]map[string]int)
-	for k, valMap := range lm.index {
-		result[k] = make(map[string]int)
+func (lm *LogManager) GetIndexCounts() map[PropName]map[PropValue]uint {
+	result := make(map[PropName]map[PropValue]uint)
+	for propName, valMap := range lm.index {
+		result[propName] = make(map[PropValue]uint)
 		for v, entryIds := range valMap {
-			result[k][v] = len(entryIds)
+			result[propName][v] = uint(len(entryIds))
 		}
 	}
 	return result
 }
 
 // GetLogsCount returns the number of logs currently stored
-func (lm *LogManager) GetLogsCount() int {
+func (lm *LogManager) GetLogsCount() uint {
 	lm.logStoreMu.RLock()
 	defer lm.logStoreMu.RUnlock()
-	return len(lm.logStore)
+	return uint(len(lm.logStore))
 }
 
 
@@ -341,12 +346,12 @@ func toString(val any) string {
 }
 
 // flattenMap flattens a nested map using dot notation
-func flattenMap(data *map[string]any, out map[string]any, prefix string) {
-	for k, v := range *data {
+func flattenMap(data JsonObject, out JsonObject, prefix string) {
+	for k, v := range data {
 		key := prefix + k
 		switch val := v.(type) {
-		case map[string]any:
-			flattenMap(&val, out, key+".")
+		case JsonObject:
+			flattenMap(val, out, key+".")
 		default:
 			out[key] = val
 		}

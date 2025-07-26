@@ -13,7 +13,7 @@ func TestFlattenMap(t *testing.T) {
 		},
 	}
 	flat := make(map[string]any)
-	flattenMap(&log, flat, "")
+	flattenMap(log, flat, "")
 
 	if flat["context.requestId"] != "123" {
 		t.Errorf("Expected %v but got %v", "123", flat["context.requestId"])
@@ -282,7 +282,7 @@ func TestLogMatchesFilter(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			payload := SearchPayload{Filters: tt.filter}
-			result := lm.logMatches(&log, &payload)
+			result := lm.logMatches(log, &payload)
 			if result != tt.expected {
 				t.Errorf("%v - Expected %v, got %v", tt.name, tt.expected, result)
 			}
@@ -365,7 +365,7 @@ func TestLogMatchesSearch(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			payload := SearchPayload{SearchTerm: tt.searchTerm}
-			result := lm.logMatches(&log, &payload)
+			result := lm.logMatches(log, &payload)
 			if result != tt.expected {
 				t.Errorf("Expected %v, got %v", tt.expected, result)
 			}
@@ -376,14 +376,14 @@ func TestLogMatchesSearch(t *testing.T) {
 func TestCallbacks(t *testing.T) {
 	var updateIndexCalled bool
 	var dropIndexCalled bool
-	var receivedIndexCounts map[string]map[string]int
+	var receivedIndexCounts map[string]map[string]uint
 	var receivedDroppedKeys []string
 
 	config := LogManagerConfig{
 		MaxIndexValues:      2, // Low value to trigger blacklisting
 		MaxLogs:             10000,
 		MaxIndexValueLength: 50,
-		UpdateIndexCallback: func(indexCounts map[string]map[string]int) {
+		UpdateIndexCallback: func(indexCounts map[string]map[string]uint) {
 			updateIndexCalled = true
 			receivedIndexCounts = indexCounts
 		},
@@ -428,7 +428,7 @@ func TestCallbacks(t *testing.T) {
 		MaxIndexValues:      10,
 		MaxLogs:             2, // Very low to trigger log removal quickly
 		MaxIndexValueLength: 50,
-		UpdateIndexCallback: func(indexCounts map[string]map[string]int) {
+		UpdateIndexCallback: func(indexCounts map[string]map[string]uint) {
 			updateIndexCalled = true
 			receivedIndexCounts = indexCounts
 		},

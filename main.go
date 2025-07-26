@@ -108,7 +108,7 @@ func main() {
 		line = strings.TrimRight(line, "\r\n")
 		fmt.Println(line) // Echo to stdout
 
-		var raw map[string]any
+		var raw JsonObject
 		if err := json.Unmarshal([]byte(line), &raw); err == nil {
 			logManager.AddLogEntry(raw)
 		}
@@ -133,7 +133,7 @@ func sendBufferedLogs(logManager *LogManager) {
 		for _, client := range wsClients {
 			logsToSend := logManager.FilterLogs(result.Logs, client.searchPayload)
 			if len(logsToSend) > 0 {
-				wsSend(client, map[string]any{
+				wsSend(client, JsonObject{
 					"type":    "add_logs",
 					"payload": logsToSend,
 				})
@@ -145,15 +145,15 @@ func sendBufferedLogs(logManager *LogManager) {
 	}
 }
 
-func sendUpdateIndexMessage(indexCounts map[string]map[string]int) {
-	wsBroadcastMsg(map[string]any{
+func sendUpdateIndexMessage(indexCounts map[PropName]map[PropValue]uint) {
+	wsBroadcastMsg(JsonObject{
 		"type":    "update_index",
 		"payload": indexCounts,
 	})
 }
 
 func sendDroppedIndexKeysMessage(droppedKeys []string) {
-	wsBroadcastMsg(map[string]any{
+	wsBroadcastMsg(JsonObject{
 		"type":    "drop_index",
 		"payload": droppedKeys,
 	})
@@ -214,13 +214,13 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	wsClientsMu.Unlock()
 
 	// On connect: send set_index and set_logs (unfiltered)
-	setIndex := map[string]any{
+	setIndex := JsonObject{
 		"type":    "set_index",
 		"payload": logManager.GetIndexCounts(),
 	}
 	wsSend(client, setIndex)
 
-	setLogs := map[string]any{
+	setLogs := JsonObject{
 		"type":    "set_logs",
 		"payload": logManager.GetLastLogs(1000),
 	}
@@ -249,7 +249,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			wsClientsMu.Unlock()
 			// Send set_logs with filtered logs
 			filtered := logManager.SearchLogs(req.Payload, 1000)
-			wsSend(client, map[string]any{
+			wsSend(client, JsonObject{
 				"type":    "set_logs",
 				"payload": filtered,
 			})
@@ -268,13 +268,13 @@ func statusBroadcastLoop() {
 }
 
 // getStatusMessage creates a status message with system information
-func getStatusMessage() map[string]any {
+func getStatusMessage() JsonObject {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 
-	return map[string]any{
+	return JsonObject{
 		"type": "set_status",
-		"payload": map[string]any{
+		"payload": JsonObject{
 			"allocatedMemory": m.Alloc,
 			"logsStored":      logManager.GetLogsCount(),
 		},
