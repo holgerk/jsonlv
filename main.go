@@ -213,16 +213,13 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	wsClients[conn] = client
 	wsClientsMu.Unlock()
 
-	// On connect: send set_index and set_logs (unfiltered)
-	setIndex := JsonObject{
-		"type":    "set_index",
-		"payload": logManager.GetIndexCounts(),
-	}
-	wsSend(client, setIndex)
-
+	// On connect: send set_logs (unfiltered)
 	setLogs := JsonObject{
-		"type":    "set_logs",
-		"payload": logManager.GetLastLogs(1000),
+		"type": "set_logs",
+		"payload": JsonObject{
+			"logs":        logManager.GetLastLogs(1000),
+			"indexCounts": logManager.GetIndexCounts(),
+		},
 	}
 	wsSend(client, setLogs)
 
@@ -248,10 +245,13 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			wsClientsMu.Unlock()
 			// Send set_logs with filtered logs
-			filtered := logManager.SearchLogs(req.Payload, 1000)
+			searchLogsResult := logManager.SearchLogs(req.Payload, 1000)
 			wsSend(client, JsonObject{
-				"type":    "set_logs",
-				"payload": filtered,
+				"type": "set_logs",
+				"payload": JsonObject{
+					"logs":        searchLogsResult.Logs,
+					"indexCounts": searchLogsResult.IndexCounts,
+				},
 			})
 		}
 	}

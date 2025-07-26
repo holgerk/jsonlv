@@ -16,6 +16,7 @@ type LogId = uint
 type PropName = string
 type PropValue = string
 type JsonObject = map[string]any
+type IndexCountsType = map[PropName]map[PropValue]uint
 
 type LogRecord struct {
 	id  LogId
@@ -24,15 +25,20 @@ type LogRecord struct {
 
 type BufferedLogsResult struct {
 	Logs        []JsonObject
-	IndexCounts map[PropName]map[PropValue]uint
+	IndexCounts IndexCountsType
 	HasLogs     bool
+}
+
+type SearchLogsResult struct {
+	Logs        []JsonObject
+	IndexCounts IndexCountsType
 }
 
 type LogManagerConfig struct {
 	MaxIndexValues        int
 	MaxLogs               int
 	MaxIndexValueLength   int
-	UpdateIndexCallback   func(indexCounts map[PropName]map[PropValue]uint)
+	UpdateIndexCallback   func(indexCounts IndexCountsType)
 	DropIndexKeysCallback func(droppedKeys []PropName)
 }
 
@@ -41,8 +47,8 @@ func DefaultLogManagerConfig() LogManagerConfig {
 		MaxIndexValues:        10,
 		MaxLogs:               10000,
 		MaxIndexValueLength:   50,
-		UpdateIndexCallback:   func(indexCounts map[PropName]map[PropValue]uint) {}, // no-op default
-		DropIndexKeysCallback: func(droppedKeys []PropName) {},                  // no-op default
+		UpdateIndexCallback:   func(indexCounts IndexCountsType) {}, // no-op default
+		DropIndexKeysCallback: func(droppedKeys []PropName) {},      // no-op default
 	}
 }
 
@@ -148,7 +154,7 @@ func (lm *LogManager) GetLastLogs(n int) []JsonObject {
 }
 
 // SearchLogs returns filtered logs based on filters and search term
-func (lm *LogManager) SearchLogs(payload SearchPayload, maxLogs int) []JsonObject {
+func (lm *LogManager) SearchLogs(payload SearchPayload, maxLogs int) SearchLogsResult {
 	lm.logStoreMu.RLock()
 	defer lm.logStoreMu.RUnlock()
 
@@ -166,7 +172,10 @@ func (lm *LogManager) SearchLogs(payload SearchPayload, maxLogs int) []JsonObjec
 		}
 	}
 
-	return result
+	return SearchLogsResult{
+		Logs:        result,
+		IndexCounts: lm.GetIndexCounts(),
+	}
 }
 
 func (lm *LogManager) FilterLogs(logs []JsonObject, payload SearchPayload) []JsonObject {
@@ -298,8 +307,8 @@ func (lm *LogManager) removeFromIndex(entryId uint, flat JsonObject) {
 }
 
 // GetIndexCounts returns the count of entries for each indexed property value
-func (lm *LogManager) GetIndexCounts() map[PropName]map[PropValue]uint {
-	result := make(map[PropName]map[PropValue]uint)
+func (lm *LogManager) GetIndexCounts() IndexCountsType {
+	result := make(IndexCountsType)
 	for propName, valMap := range lm.index {
 		result[propName] = make(map[PropValue]uint)
 		for v, entryIds := range valMap {
@@ -315,7 +324,6 @@ func (lm *LogManager) GetLogsCount() uint {
 	defer lm.logStoreMu.RUnlock()
 	return uint(len(lm.logStore))
 }
-
 
 // ============================================================================
 // Utility Functions

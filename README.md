@@ -98,23 +98,7 @@ A command-line and web-based real-time log inspection tool written in Go.
 
 ### On Client Connect
 
-- **`set_index`:** Sends the current (flattened) index with counts.
-  - Payload:
-    ```json
-    {
-      "type": "set_index",
-      "payload": {
-        "context.bindings.userId": {
-          "1020-500555": 1
-        },
-        "level_name": {
-          "INFO": 1,
-          "ERROR": 2
-        }
-      }
-    }
-    ```
-- `set_logs`: Sends last 1000 logs (filtered if applicable).
+- **`set_logs`:** Sends last 1000 logs (filtered if applicable) and the current (flattened) index with counts.
 
 ### Message Types
 
@@ -144,27 +128,37 @@ A command-line and web-based real-time log inspection tool written in Go.
 #### Server to client
 
 - **`set_logs`:**
-  - Payload: `{ type: "set_logs", payload: [records...] }`
   - Example:
     ```json
     {
       "type": "set_logs",
-      "payload": [
-        {
-          "context": {
-            "userId": "1020-500555"
+      "payload": {
+        "indexCounts": {
+          "context.bindings.userId": {
+            "1020-500555": 1
           },
-          "level": 200,
-          "level_name": "INFO"
+          "level_name": {
+            "INFO": 1,
+            "ERROR": 2
+          }
         },
-        {
-          "context": {
-            "userId": "1020-500555"
+        "logs": [
+          {
+            "context": {
+              "userId": "1020-500555"
+            },
+            "level": 200,
+            "level_name": "INFO"
           },
-          "level": 200,
-          "level_name": "ERROR"
-        }
-      ]
+          {
+            "context": {
+              "userId": "1020-500555"
+            },
+            "level": 200,
+            "level_name": "ERROR"
+          }
+        ]
+      }
     }
     ```
   - Result: Clients removes all log entries from display und displays the given log records
@@ -347,7 +341,7 @@ The log view is a dynamic, real-time display of JSON logs, optimized for readabi
 
 - **On Page Load:**
   - Connects to WebSocket.
-  - Receives initial index and logs. (`set_index` and `set_logs`)
+  - Receives initial index and logs. (`set_logs`)
 - **Filtering:**
   - Selecting filters updates the displayed logs.
   - Only logs matching selected filters are shown.

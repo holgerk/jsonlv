@@ -317,6 +317,7 @@ body {
 
 .log-entry .message {
     margin-top: 4px;
+    word-break: break-all;
 }
 
 .log-entry .properties-table {

@@ -54,10 +54,6 @@ function setStatus(text, color) {
 
 function handleWSMessage(msg) {
   switch (msg.type) {
-    case "set_index":
-      index = msg.payload;
-      renderFilters();
-      break;
     case "update_index":
       Object.assign(index, msg.payload);
       renderFilters();
@@ -67,8 +63,10 @@ function handleWSMessage(msg) {
       renderFilters();
       break;
     case "set_logs":
-      logs = msg.payload;
+      logs = msg.payload.logs;
       renderLogs();
+      index = msg.payload.indexCounts;
+      renderFilters();
       break;
     case "add_logs":
       logs.push(...msg.payload);
