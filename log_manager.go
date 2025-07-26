@@ -94,7 +94,7 @@ func (lm *LogManager) AddLogEntry(raw map[string]any) uint {
 		Raw: raw,
 	}
 	lm.logOrder = append(lm.logOrder, id)
-	lm.updateIndex(id, flat)
+	lm.addToIndex(id, flat)
 	lm.enforceMaxLogs()
 	lm.logStoreMu.Unlock()
 
@@ -233,8 +233,8 @@ func (lm *LogManager) enforceMaxLogs() {
 	}
 }
 
-// updateIndex adds a log entry to the search index
-func (lm *LogManager) updateIndex(entryId uint, flat map[string]any) {
+// addToIndex adds a log entry to the search index
+func (lm *LogManager) addToIndex(entryId uint, flat map[string]any) {
 	for k, v := range flat {
 		valStr := toString(v)
 		if valStr == "" {
