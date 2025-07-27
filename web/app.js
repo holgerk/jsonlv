@@ -105,6 +105,9 @@ function renderFilters() {
       const btn = document.createElement("button");
       btn.textContent = `${val} (${values[val]})`;
       btn.className = "filter-btn";
+      if (values[val] == 0) {
+        btn.className = "filter-btn filter-zero-matches";
+      }
       if (filters[key] && filters[key].includes(val))
         btn.classList.add("active");
       btn.onclick = function () {

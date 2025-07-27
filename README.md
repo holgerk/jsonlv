@@ -391,8 +391,6 @@ The following filter boxes appear:
 
 # Todos
 
-- limit number of messages in view
-- highlight matches in json
 - wildcard search
 - reduce memory consumption
 - persist ui settings (filter, search, resizer positon) in url

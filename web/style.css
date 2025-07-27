@@ -257,6 +257,10 @@ body {
     text-overflow: ellipsis;
 }
 
+.filter-btn.filter-zero-matches {
+    color: #bbbbbb;
+}
+
 .filter-btn:hover {
     background: #eee8d5;
 }
@@ -330,12 +334,12 @@ body {
     border-collapse: collapse;
 }
 
-.log-entry .properties-table th, td {
+.log-entry .properties-table th,
+td {
     padding: 8px 8px 0 0;
     text-align: left;
     vertical-align: text-top;
 }
-
 
 .log-entry .property {
     margin-bottom: 2px;
