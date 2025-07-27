@@ -12,8 +12,7 @@ func TestFlattenMap(t *testing.T) {
 			"requestId": "123",
 		},
 	}
-	flat := make(map[string]any)
-	flattenMap(log, flat, "")
+	flat := flattenMap(log)
 
 	if flat["context.requestId"] != "123" {
 		t.Errorf("Expected %v but got %v", "123", flat["context.requestId"])
@@ -374,19 +373,13 @@ func TestLogMatchesSearch(t *testing.T) {
 }
 
 func TestCallbacks(t *testing.T) {
-	var updateIndexCalled bool
 	var dropIndexCalled bool
-	var receivedIndexCounts map[string]map[string]uint
 	var receivedDroppedKeys []string
 
 	config := LogManagerConfig{
 		MaxIndexValues:      2, // Low value to trigger blacklisting
 		MaxLogs:             10000,
 		MaxIndexValueLength: 50,
-		UpdateIndexCallback: func(indexCounts map[string]map[string]uint) {
-			updateIndexCalled = true
-			receivedIndexCounts = indexCounts
-		},
 		DropIndexKeysCallback: func(droppedKeys []string) {
 			dropIndexCalled = true
 			receivedDroppedKeys = droppedKeys
@@ -428,10 +421,6 @@ func TestCallbacks(t *testing.T) {
 		MaxIndexValues:      10,
 		MaxLogs:             2, // Very low to trigger log removal quickly
 		MaxIndexValueLength: 50,
-		UpdateIndexCallback: func(indexCounts map[string]map[string]uint) {
-			updateIndexCalled = true
-			receivedIndexCounts = indexCounts
-		},
 		DropIndexKeysCallback: func(droppedKeys []string) {},
 	}
 	lm2 := NewLogManager(config2)
@@ -440,14 +429,6 @@ func TestCallbacks(t *testing.T) {
 	for i := range 3 {
 		raw := map[string]any{"id": i}
 		lm2.AddLogEntry(raw)
-	}
-
-	// Verify update index callback was called
-	if !updateIndexCalled {
-		t.Errorf("Expected UpdateIndexCallback to be called")
-	}
-	if receivedIndexCounts == nil {
-		t.Errorf("Expected to receive index counts")
 	}
 }
 

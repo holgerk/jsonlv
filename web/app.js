@@ -23,30 +23,32 @@ let isResizing = false;
 function connectWS() {
   ws = new WebSocket(`ws://${location.host}/ws`);
   ws.onopen = () => {
-    setStatus("Connected", "green");
+    renderStatus();
     if (reconnectInterval) {
       clearInterval(reconnectInterval);
       reconnectInterval = null;
     }
   };
   ws.onclose = () => {
-    setStatus("Reconnecting...", "orange");
+    renderStatus("Reconnecting...", "orange");
     if (!reconnectInterval) {
       reconnectInterval = setInterval(() => {
-        setStatus("Reconnecting...", "orange");
+        renderStatus("Reconnecting...", "orange");
         connectWS();
       }, 1000);
     }
   };
-  ws.onerror = () => setStatus("Error", "red");
+  ws.onerror = () => renderStatus("Error", "red");
   ws.onmessage = (e) => handleWSMessage(JSON.parse(e.data));
 }
 
-function setStatus(text, color) {
+function renderStatus(text, color) {
+  text ||= "Connected";
+  color ||= "green";
   let statusText = text;
   if (serverStatus && text === "Connected") {
     const memoryMB = Math.round(serverStatus.allocatedMemory / 1024 / 1024);
-    statusText = `Connected | ${serverStatus.logsStored} logs | ${memoryMB} MB`;
+    statusText = `Connected | ${logs.length}/${serverStatus.logsStored} logs | ${memoryMB} MB`;
   }
   statusEl.textContent = statusText;
   statusEl.style.color = color;
@@ -67,15 +69,17 @@ function handleWSMessage(msg) {
       renderLogs();
       index = msg.payload.indexCounts;
       renderFilters();
+      renderStatus();
       break;
     case "add_logs":
       logs.push(...msg.payload);
       if (logs.length > 1000) logs = logs.slice(-1000);
       renderLogs();
+      renderStatus();
       break;
     case "set_status":
       serverStatus = msg.payload;
-      setStatus("Connected", "green");
+      renderStatus();
       break;
   }
 }

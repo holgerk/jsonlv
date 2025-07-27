@@ -28,14 +28,10 @@ import (
 // Type Definitions
 // ============================================================================
 
-type SearchPayload struct {
-	SearchTerm string              `json:"searchTerm"`
-	Filters    map[string][]string `json:"filters"`
-}
-
-type wsClient struct {
+type Client struct {
 	conn          *websocket.Conn
 	searchPayload SearchPayload
+	indexCounts   IndexCounts
 	writeMu       sync.Mutex
 }
 
@@ -51,7 +47,7 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
-var wsClients = make(map[*websocket.Conn]*wsClient)
+var wsClients = make(map[*websocket.Conn]*Client)
 var wsBroadcast = make(chan []byte)
 var wsClientsMu sync.Mutex
 
@@ -67,13 +63,14 @@ var webFiles, _ = fs.Sub(webFS, "web")
 func main() {
 	devMode := flag.Bool("dev", false, "Serve web files from filesystem (for development)")
 	maxIndexValueLengthFlag := flag.Int("maxIndexValueLength", 50, "Maximum length of values to index (omit longer values)")
+	maxLogsFlag := flag.Int("maxLogs", 10000, "Maximum number of logs to store in memory")
 	flag.Parse()
 
 	// Initialize LogManager
 	config := DefaultLogManagerConfig()
 	config.MaxIndexValueLength = *maxIndexValueLengthFlag
-	config.UpdateIndexCallback = sendUpdateIndexMessage
-	config.DropIndexKeysCallback = sendDroppedIndexKeysMessage
+	config.MaxLogs = *maxLogsFlag
+	config.DropIndexKeysCallback = broadcastDroppedIndexKeysMessage
 	logManager = NewLogManager(config)
 
 	reader := bufio.NewReader(os.Stdin)
@@ -138,29 +135,47 @@ func sendBufferedLogs(logManager *LogManager) {
 					"payload": logsToSend,
 				})
 			}
+			if client.indexCounts == nil {
+				sendUpdateIndexMessage(client, logManager.GetIndexCounts())
+			} else {
+				logManager.increaseClientIndexCounts(client.indexCounts, client.searchPayload.Filters, result.Logs)
+				sendUpdateIndexMessage(client, client.indexCounts)
+			}
 		}
 		wsClientsMu.Unlock()
-
-		sendUpdateIndexMessage(result.IndexCounts)
 	}
 }
 
-func sendUpdateIndexMessage(indexCounts map[PropName]map[PropValue]uint) {
-	wsBroadcastMsg(JsonObject{
+func sendUpdateIndexMessage(client *Client, indexCounts IndexCounts) {
+	wsSend(client, JsonObject{
 		"type":    "update_index",
 		"payload": indexCounts,
 	})
 }
 
-func sendDroppedIndexKeysMessage(droppedKeys []string) {
+func broadcastDroppedIndexKeysMessage(droppedKeys []string) {
 	wsBroadcastMsg(JsonObject{
 		"type":    "drop_index",
 		"payload": droppedKeys,
 	})
 }
 
+// getStatusMessage creates a status message with system information
+func getStatusMessage() JsonObject {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	return JsonObject{
+		"type": "set_status",
+		"payload": JsonObject{
+			"allocatedMemory": m.Alloc,
+			"logsStored":      logManager.GetLogsCount(),
+		},
+	}
+}
+
 // wsSend sends a message to a specific WebSocket client
-func wsSend(client *wsClient, msg any) error {
+func wsSend(client *Client, msg any) error {
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return err
@@ -208,7 +223,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.Close()
-	client := &wsClient{conn: conn}
+	client := &Client{conn: conn}
 	wsClientsMu.Lock()
 	wsClients[conn] = client
 	wsClientsMu.Unlock()
@@ -246,6 +261,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			wsClientsMu.Unlock()
 			// Send set_logs with filtered logs
 			searchLogsResult := logManager.SearchLogs(req.Payload, 1000)
+			client.indexCounts = searchLogsResult.IndexCounts
 			wsSend(client, JsonObject{
 				"type": "set_logs",
 				"payload": JsonObject{
@@ -264,19 +280,5 @@ func statusBroadcastLoop() {
 
 	for range ticker.C {
 		wsBroadcastMsg(getStatusMessage())
-	}
-}
-
-// getStatusMessage creates a status message with system information
-func getStatusMessage() JsonObject {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-
-	return JsonObject{
-		"type": "set_status",
-		"payload": JsonObject{
-			"allocatedMemory": m.Alloc,
-			"logsStored":      logManager.GetLogsCount(),
-		},
 	}
 }

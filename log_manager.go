@@ -16,7 +16,9 @@ type LogId = uint
 type PropName = string
 type PropValue = string
 type JsonObject = map[string]any
-type IndexCountsType = map[PropName]map[PropValue]uint
+type FlatJsonObject = map[string]string
+type IndexCounts = map[PropName]map[PropValue]uint
+type SearchFilters = map[PropName][]PropValue
 
 type LogRecord struct {
 	id  LogId
@@ -24,21 +26,24 @@ type LogRecord struct {
 }
 
 type BufferedLogsResult struct {
-	Logs        []JsonObject
-	IndexCounts IndexCountsType
-	HasLogs     bool
+	Logs    []JsonObject
+	HasLogs bool
+}
+
+type SearchPayload struct {
+	SearchTerm string        `json:"searchTerm"`
+	Filters    SearchFilters `json:"filters"`
 }
 
 type SearchLogsResult struct {
 	Logs        []JsonObject
-	IndexCounts IndexCountsType
+	IndexCounts IndexCounts
 }
 
 type LogManagerConfig struct {
 	MaxIndexValues        int
 	MaxLogs               int
 	MaxIndexValueLength   int
-	UpdateIndexCallback   func(indexCounts IndexCountsType)
 	DropIndexKeysCallback func(droppedKeys []PropName)
 }
 
@@ -47,8 +52,7 @@ func DefaultLogManagerConfig() LogManagerConfig {
 		MaxIndexValues:        10,
 		MaxLogs:               10000,
 		MaxIndexValueLength:   50,
-		UpdateIndexCallback:   func(indexCounts IndexCountsType) {}, // no-op default
-		DropIndexKeysCallback: func(droppedKeys []PropName) {},      // no-op default
+		DropIndexKeysCallback: func(droppedKeys []PropName) {}, // no-op default
 	}
 }
 
@@ -95,9 +99,7 @@ func (lm *LogManager) AddLogEntry(raw JsonObject) uint {
 	lm.idCounter++
 	id := lm.idCounter
 	lm.idCounterMu.Unlock()
-
-	flat := make(map[PropName]any)
-	flattenMap(raw, flat, "")
+	flat := flattenMap(raw)
 
 	lm.logStoreMu.Lock()
 	lm.logStore[id] = LogRecord{
@@ -125,9 +127,8 @@ func (lm *LogManager) GetAndClearBufferedLogs() BufferedLogsResult {
 	}
 
 	result := BufferedLogsResult{
-		Logs:        make([]JsonObject, len(lm.logBuffer)),
-		IndexCounts: lm.GetIndexCounts(),
-		HasLogs:     true,
+		Logs:    make([]JsonObject, len(lm.logBuffer)),
+		HasLogs: true,
 	}
 	copy(result.Logs, lm.logBuffer)
 	lm.logBuffer = lm.logBuffer[:0]
@@ -154,27 +155,59 @@ func (lm *LogManager) GetLastLogs(n int) []JsonObject {
 }
 
 // SearchLogs returns filtered logs based on filters and search term
-func (lm *LogManager) SearchLogs(payload SearchPayload, maxLogs int) SearchLogsResult {
+func (lm *LogManager) SearchLogs(searchPayload SearchPayload, maxLogs int) SearchLogsResult {
 	lm.logStoreMu.RLock()
 	defer lm.logStoreMu.RUnlock()
 
 	result := []JsonObject{}
 	count := 0
 
+	globalCounts := lm.GetIndexCounts()
+	newCounts := make(IndexCounts)
+	for propName, propValues := range globalCounts {
+		if _, ok := newCounts[propName]; !ok {
+			newCounts[propName] = make(map[PropValue]uint)
+		}
+		for propValue, propValueCount := range propValues {
+			if _, ok := searchPayload.Filters[propName]; ok {
+				if slices.Contains(searchPayload.Filters[propName], propValue) {
+					newCounts[propName][propValue] = 0
+				} else {
+					newCounts[propName][propValue] = propValueCount
+				}
+			} else {
+				newCounts[propName][propValue] = 0
+			}
+		}
+	}
+
 	// Start from the end (most recent logs)
-	for i := len(lm.logOrder) - 1; i >= 0 && count < maxLogs; i-- {
+	for i := len(lm.logOrder) - 1; i >= 0; i-- {
 		entryId := lm.logOrder[i]
 		if entry, ok := lm.logStore[entryId]; ok {
-			if lm.logMatches(entry.Raw, &payload) {
-				result = append([]JsonObject{entry.Raw}, result...)
+			if lm.logMatches(entry.Raw, &searchPayload) {
+				if count < maxLogs {
+					result = append([]JsonObject{entry.Raw}, result...)
+				}
 				count++
+
+				flat := flattenMap(entry.Raw)
+				for propName, propValue := range flat {
+					if lm.omitIndexValue(propName, propValue) {
+						continue
+					}
+					if _, ok := newCounts[propName]; !ok {
+						newCounts[propName] = make(map[PropValue]uint)
+					}
+					newCounts[propName][propValue]++
+				}
 			}
 		}
 	}
 
 	return SearchLogsResult{
 		Logs:        result,
-		IndexCounts: lm.GetIndexCounts(),
+		IndexCounts: newCounts,
 	}
 }
 
@@ -189,19 +222,18 @@ func (lm *LogManager) FilterLogs(logs []JsonObject, payload SearchPayload) []Jso
 }
 
 func (lm *LogManager) logMatches(raw JsonObject, payload *SearchPayload) bool {
-	return lm.logMatchesFilter(raw, &payload.Filters) && lm.logMatchesSearch(raw, payload.SearchTerm)
+	return lm.logMatchesFilter(raw, payload.Filters) && lm.logMatchesSearch(raw, payload.SearchTerm)
 }
 
 // logMatchesFilter checks if a log entry matches the given filters
-func (lm *LogManager) logMatchesFilter(raw JsonObject, filter *map[string][]string) bool {
+func (lm *LogManager) logMatchesFilter(raw JsonObject, filter map[PropName][]PropValue) bool {
 	if filter == nil {
 		return true
 	}
-	flat := make(JsonObject)
-	flattenMap(raw, flat, "")
-	for k, vals := range *filter {
-		valStr := toString(flat[k])
-		match := slices.Contains(vals, valStr)
+	flat := flattenMap(raw)
+	for propName, propValues := range filter {
+		propValue := flat[propName]
+		match := slices.Contains(propValues, propValue)
 		if !match {
 			return false
 		}
@@ -217,12 +249,10 @@ func (lm *LogManager) logMatchesSearch(raw JsonObject, searchTerm string) bool {
 	searchTerm = strings.ToLower(searchTerm)
 
 	// Search in flattened structure
-	flat := make(JsonObject)
-	flattenMap(raw, flat, "")
+	flat := flattenMap(raw)
 
-	for _, value := range flat {
-		valueStr := toString(value)
-		if strings.Contains(strings.ToLower(valueStr), searchTerm) {
+	for _, propValue := range flat {
+		if strings.Contains(strings.ToLower(propValue), searchTerm) {
 			return true
 		}
 	}
@@ -235,57 +265,45 @@ func (lm *LogManager) enforceMaxLogs() {
 		oldest := lm.logOrder[0]
 		lm.logOrder = lm.logOrder[1:]
 		if entry, ok := lm.logStore[oldest]; ok {
-			flatOld := make(JsonObject)
-			flattenMap(entry.Raw, flatOld, "")
+			flatOld := flattenMap(entry.Raw)
 			lm.removeFromIndex(oldest, flatOld)
 			delete(lm.logStore, oldest)
-			// Notify via callback about index update
-			if lm.config.UpdateIndexCallback != nil {
-				lm.config.UpdateIndexCallback(lm.GetIndexCounts())
-			}
+			// tod o Notify via callback about index update
 		}
 	}
 }
 
 // addToIndex adds a log entry to the search index
-func (lm *LogManager) addToIndex(entryId uint, flat JsonObject) {
-	for k, v := range flat {
-		valStr := toString(v)
-		if valStr == "" {
-			continue // omit empty values
+func (lm *LogManager) addToIndex(entryId uint, flat FlatJsonObject) {
+	for propName, propValue := range flat {
+		if lm.omitIndexValue(propName, propValue) {
+			continue
 		}
-		if len(valStr) > lm.config.MaxIndexValueLength {
-			continue // omit very long values
+		if _, ok := lm.index[propName]; !ok {
+			lm.index[propName] = make(map[string][]uint)
 		}
-		if lm.blacklist[k] {
-			continue // skip blacklisted properties
-		}
-		if _, ok := lm.index[k]; !ok {
-			lm.index[k] = make(map[string][]uint)
-		}
-		valMap := lm.index[k]
-		valMap[valStr] = append(valMap[valStr], entryId)
+		valMap := lm.index[propName]
+		valMap[propValue] = append(valMap[propValue], entryId)
 		// Blacklist if too many unique values
 		if len(valMap) > lm.config.MaxIndexValues {
-			delete(lm.index, k)
-			lm.blacklist[k] = true
+			delete(lm.index, propName)
+			lm.blacklist[propName] = true
 			// Notify via callback about dropped index
 			if lm.config.DropIndexKeysCallback != nil {
-				lm.config.DropIndexKeysCallback([]string{k})
+				lm.config.DropIndexKeysCallback([]string{propName})
 			}
 		}
 	}
 }
 
 // removeFromIndex removes a log entry from the search index
-func (lm *LogManager) removeFromIndex(entryId uint, flat JsonObject) {
-	for k, v := range flat {
-		valStr := toString(v)
-		if len(valStr) > lm.config.MaxIndexValueLength {
+func (lm *LogManager) removeFromIndex(entryId uint, flat FlatJsonObject) {
+	for propName, propValue := range flat {
+		if len(propValue) > lm.config.MaxIndexValueLength {
 			continue // omit very long values
 		}
-		if valMap, ok := lm.index[k]; ok {
-			if entryIds, ok := valMap[valStr]; ok {
+		if propValueMap, ok := lm.index[propName]; ok {
+			if entryIds, ok := propValueMap[propValue]; ok {
 				// Remove uint from slice
 				newEntryIds := []uint{}
 				for _, id := range entryIds {
@@ -294,21 +312,49 @@ func (lm *LogManager) removeFromIndex(entryId uint, flat JsonObject) {
 					}
 				}
 				if len(newEntryIds) == 0 {
-					delete(valMap, valStr)
+					delete(propValueMap, propValue)
 				} else {
-					valMap[valStr] = newEntryIds
+					propValueMap[propValue] = newEntryIds
 				}
 			}
-			if len(valMap) == 0 {
-				delete(lm.index, k)
+			if len(propValueMap) == 0 {
+				delete(lm.index, propName)
 			}
 		}
 	}
 }
 
+func (lm *LogManager) increaseClientIndexCounts(indexCounts IndexCounts, _ SearchFilters, logs []JsonObject) {
+	for _, log := range logs {
+		flat := flattenMap(log)
+		for propName, propValue := range flat {
+			if lm.omitIndexValue(propName, propValue) {
+				continue
+			}
+			if _, ok := indexCounts[propName]; !ok {
+				indexCounts[propName] = make(map[PropValue]uint)
+			}
+			indexCounts[propName][propValue]++
+		}
+	}
+}
+
+func (lm *LogManager) omitIndexValue(propName string, propValue string) bool {
+	if propValue == "" {
+		return true // omit empty values
+	}
+	if len(propValue) > lm.config.MaxIndexValueLength {
+		return true // omit very long values
+	}
+	if lm.blacklist[propName] {
+		return true // skip blacklisted properties
+	}
+	return false
+}
+
 // GetIndexCounts returns the count of entries for each indexed property value
-func (lm *LogManager) GetIndexCounts() IndexCountsType {
-	result := make(IndexCountsType)
+func (lm *LogManager) GetIndexCounts() IndexCounts {
+	result := make(IndexCounts)
 	for propName, valMap := range lm.index {
 		result[propName] = make(map[PropValue]uint)
 		for v, entryIds := range valMap {
@@ -354,14 +400,21 @@ func toString(val any) string {
 }
 
 // flattenMap flattens a nested map using dot notation
-func flattenMap(data JsonObject, out JsonObject, prefix string) {
+func flattenMap(data JsonObject) FlatJsonObject {
+	out := make(FlatJsonObject)
+	flattenMapInternal(data, out, "")
+	return out
+}
+
+func flattenMapInternal(data JsonObject, out FlatJsonObject, prefix string) {
 	for k, v := range data {
 		key := prefix + k
 		switch val := v.(type) {
 		case JsonObject:
-			flattenMap(val, out, key+".")
+			flattenMapInternal(val, out, key+".")
 		default:
-			out[key] = val
+			out[key] = toString(val)
 		}
 	}
+
 }

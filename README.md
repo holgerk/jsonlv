@@ -396,3 +396,4 @@ The following filter boxes appear:
 - wildcard search
 - reduce memory consumption
 - persist ui settings (filter, search, resizer positon) in url
+- hightlight/flash new logs
