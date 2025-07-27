@@ -144,7 +144,7 @@ function setupSearch() {
   let searchTimeout;
   searchInput.addEventListener("input", (e) => {
     searchTerm = e.target.value;
-    updateClearButton();
+    updateSearchClearButton();
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
       sendFilterRequest();
@@ -155,7 +155,7 @@ function setupSearch() {
   searchClear.addEventListener("click", () => {
     searchInput.value = "";
     searchTerm = "";
-    updateClearButton();
+    updateSearchClearButton();
     sendFilterRequest();
   });
 }
@@ -182,7 +182,7 @@ function setupFilterSearch() {
   });
 }
 
-function updateClearButton() {
+function updateSearchClearButton() {
   if (searchTerm.trim()) {
     searchClear.classList.add("visible");
   } else {
@@ -312,6 +312,26 @@ function getValueClass(value) {
   return "";
 }
 
+function formatValue(value) {
+  if (value === null || value === undefined) return "null";
+  if (typeof value === "object") {
+    return syntaxHighlightJson(value);
+  }
+
+  let stringValue = value.toString();
+
+  stringValue = highlightSearchTerm(stringValue);
+
+  // Escape HTML but preserve our highlight spans
+  stringValue = stringValue
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/&lt;span class="highlight"&gt;/g, '<span class="highlight">')
+    .replace(/&lt;\/span&gt;/g, "</span>");
+
+  return stringValue;
+}
+
 function syntaxHighlightJson(json) {
   json = JSON.stringify(json, null, 4); // Pretty-print with 2-space indent
 
@@ -331,20 +351,12 @@ function syntaxHighlightJson(json) {
       } else if (/null/.test(match)) {
         className = "null";
       }
-      return `<span class="${className}">${match}</span>`;
+      return `<span class="${className}">${highlightSearchTerm(match)}</span>`;
     },
   );
 }
 
-function formatValue(value) {
-  if (value === null || value === undefined) return "null";
-  if (typeof value === "object") {
-    return syntaxHighlightJson(value);
-  }
-
-  let stringValue = value.toString();
-
-  // Highlight search term matches if search term exists
+function highlightSearchTerm(stringValue) {
   if (searchTerm && searchTerm.trim()) {
     const searchRegex = new RegExp(`(${escapeRegex(searchTerm.trim())})`, "gi");
     stringValue = stringValue.replace(
@@ -352,14 +364,6 @@ function formatValue(value) {
       '<span class="highlight">$1</span>',
     );
   }
-
-  // Escape HTML but preserve our highlight spans
-  stringValue = stringValue
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/&lt;span class="highlight"&gt;/g, '<span class="highlight">')
-    .replace(/&lt;\/span&gt;/g, "</span>");
-
   return stringValue;
 }
 
@@ -423,5 +427,5 @@ setupResetFilters();
 setupFullscreen();
 setupResizer();
 setupExpandJson();
-updateClearButton();
+updateSearchClearButton();
 updateFilterClearButton();
