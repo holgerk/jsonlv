@@ -228,15 +228,6 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	wsClients[conn] = client
 	wsClientsMu.Unlock()
 
-	// On connect: send set_logs (unfiltered)
-	setLogs := JsonObject{
-		"type": "set_logs",
-		"payload": JsonObject{
-			"logs":        logManager.GetLastLogs(1000),
-			"indexCounts": logManager.GetIndexCounts(),
-		},
-	}
-	wsSend(client, setLogs)
 
 	wsSend(client, getStatusMessage())
 

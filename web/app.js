@@ -10,6 +10,8 @@ const filterSearchClear = document.getElementById("filter-search-clear");
 const resetFiltersBtn = document.getElementById("reset-filters");
 
 let ws;
+let wsOpen = false;
+let domContentLoaded = false;
 let reconnectInterval = null;
 let filters = {};
 let searchTerm = "";
@@ -17,13 +19,97 @@ let filterSearchTerm = "";
 let index = {};
 let logs = [];
 let serverStatus = null;
+let stickyFilters = new Set();
 
 let isResizing = false;
+
+// URL state management
+function updateURL() {
+  const params = new URLSearchParams();
+
+  // Add filters
+  if (Object.keys(filters).length > 0) {
+    params.set("filters", JSON.stringify(filters));
+  }
+
+  // Add search term
+  if (searchTerm.trim()) {
+    params.set("search", searchTerm.trim());
+  }
+
+  // Add filter search term
+  if (filterSearchTerm.trim()) {
+    params.set("filterSearch", filterSearchTerm.trim());
+  }
+
+  // Add sticky filters
+  if (stickyFilters.size > 0) {
+    params.set("sticky", Array.from(stickyFilters).join(","));
+  }
+
+  const actualUrl = `${window.location.pathname}${window.location.search}`;
+  const newURL = `${window.location.pathname}${params.toString() ? "?" + params.toString() : ""}`;
+  if (newURL != actualUrl) {
+    window.history.pushState({}, "", newURL);
+  }
+}
+
+function loadStateFromURL() {
+  const params = new URLSearchParams(window.location.search);
+
+  // Load filters
+  const filtersParam = params.get("filters");
+  if (filtersParam) {
+    try {
+      const parsedFilters = JSON.parse(filtersParam);
+      if (typeof parsedFilters === "object" && parsedFilters !== null) {
+        filters = parsedFilters;
+      }
+    } catch (e) {
+      console.warn("Invalid filters in URL:", e);
+      filters = {};
+    }
+  } else {
+    filters = {};
+  }
+
+  // Load search term
+  const searchParam = params.get("search");
+  if (searchParam) {
+    searchTerm = searchParam;
+    if (searchInput) {
+      searchInput.value = searchTerm;
+    }
+  } else {
+    searchTerm = "";
+  }
+  updateSearchClearButton();
+
+  // Load filter search term
+  const filterSearchParam = params.get("filterSearch");
+  if (filterSearchParam) {
+    filterSearchTerm = filterSearchParam;
+    if (filterSearchInput) {
+      filterSearchInput.value = filterSearchTerm;
+    }
+  } else {
+    filterSearchTerm = "";
+  }
+  updateFilterClearButton();
+
+  // Load sticky filters
+  const stickyParam = params.get("sticky");
+  if (stickyParam) {
+    stickyFilters = new Set(stickyParam.split(",").filter((s) => s.trim()));
+  } else {
+    stickyFilters = new Set();
+  }
+}
 
 function connectWS() {
   ws = new WebSocket(`ws://${location.host}/ws`);
   ws.onopen = () => {
-    renderStatus();
+    onWebsocketOpen();
     if (reconnectInterval) {
       clearInterval(reconnectInterval);
       reconnectInterval = null;
@@ -40,18 +126,6 @@ function connectWS() {
   };
   ws.onerror = () => renderStatus("Error", "red");
   ws.onmessage = (e) => handleWSMessage(JSON.parse(e.data));
-}
-
-function renderStatus(text, color) {
-  text ||= "Connected";
-  color ||= "green";
-  let statusText = text;
-  if (serverStatus && text === "Connected") {
-    const memoryMB = Math.round(serverStatus.allocatedMemory / 1024 / 1024);
-    statusText = `Connected | ${logs.length}/${serverStatus.logsStored} logs | ${memoryMB} MB`;
-  }
-  statusEl.textContent = statusText;
-  statusEl.style.color = color;
 }
 
 function handleWSMessage(msg) {
@@ -84,6 +158,30 @@ function handleWSMessage(msg) {
   }
 }
 
+function sendSearchRequest() {
+  const payload = { filters: { ...filters } };
+  if (searchTerm.trim()) {
+    payload.searchTerm = searchTerm.trim();
+  }
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "set_search", payload: payload }));
+  } else {
+    console.debug("websocket not readyState");
+  }
+}
+
+function renderStatus(text, color) {
+  text ||= "Connected";
+  color ||= "green";
+  let statusText = text;
+  if (serverStatus && text === "Connected") {
+    const memoryMB = Math.round(serverStatus.allocatedMemory / 1024 / 1024);
+    statusText = `Connected | ${logs.length}/${serverStatus.logsStored} logs | ${memoryMB} MB`;
+  }
+  statusEl.textContent = statusText;
+  statusEl.style.color = color;
+}
+
 function renderFilters() {
   filterContent.innerHTML = "";
 
@@ -93,12 +191,43 @@ function renderFilters() {
     return key.toLowerCase().includes(filterSearchTerm.toLowerCase());
   });
 
+  // Sort filtered keys to prioritize sticky filters
+  filteredKeys.sort((a, b) => {
+    const aIsSticky = stickyFilters.has(a);
+    const bIsSticky = stickyFilters.has(b);
+
+    if (aIsSticky && !bIsSticky) return -1;
+    if (!aIsSticky && bIsSticky) return 1;
+    return a.localeCompare(b);
+  });
+
   for (const key of filteredKeys) {
     const box = document.createElement("div");
     box.className = "filter-box";
+    if (stickyFilters.has(key)) {
+      box.classList.add("sticky");
+    }
+
     const title = document.createElement("div");
     title.className = "filter-title";
-    title.textContent = key;
+
+    const titleText = document.createElement("span");
+    titleText.textContent = key;
+    title.appendChild(titleText);
+
+    const stickyToggle = document.createElement("button");
+    stickyToggle.className = "sticky-toggle";
+    stickyToggle.innerHTML = "📌";
+    stickyToggle.title = "Toggle sticky";
+    if (stickyFilters.has(key)) {
+      stickyToggle.classList.add("active");
+    }
+    stickyToggle.onclick = function (e) {
+      e.stopPropagation();
+      toggleSticky(key);
+    };
+    title.appendChild(stickyToggle);
+
     box.appendChild(title);
     const values = index[key];
     for (const val in values) {
@@ -130,17 +259,18 @@ function toggleFilter(btn, key, val) {
     filters[key].splice(idx, 1);
   }
   if (filters[key].length === 0) delete filters[key];
-  sendFilterRequest();
+  updateURL();
+  sendSearchRequest();
 }
 
-function sendFilterRequest() {
-  const payload = { filters: { ...filters } };
-  if (searchTerm.trim()) {
-    payload.searchTerm = searchTerm.trim();
+function toggleSticky(key) {
+  if (stickyFilters.has(key)) {
+    stickyFilters.delete(key);
+  } else {
+    stickyFilters.add(key);
   }
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: "set_search", payload: payload }));
-  }
+  updateURL();
+  renderFilters();
 }
 
 function setupSearch() {
@@ -150,7 +280,8 @@ function setupSearch() {
     updateSearchClearButton();
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
-      sendFilterRequest();
+      updateURL();
+      sendSearchRequest();
     }, 300); // Debounce search requests
   });
 
@@ -159,13 +290,16 @@ function setupSearch() {
     searchInput.value = "";
     searchTerm = "";
     updateSearchClearButton();
-    sendFilterRequest();
+    updateURL();
+    sendSearchRequest();
   });
 }
 
 function resetAllFilters() {
   filters = {};
-  sendFilterRequest();
+  // Don't reset sticky filters, only clear the active selections
+  updateURL();
+  sendSearchRequest();
   renderFilters();
 }
 
@@ -174,6 +308,7 @@ function setupFilterSearch() {
     filterSearchTerm = e.target.value;
     updateFilterClearButton();
     renderFilters();
+    updateURL(true);
   });
 
   // Clear button functionality for filter search
@@ -182,6 +317,7 @@ function setupFilterSearch() {
     filterSearchTerm = "";
     updateFilterClearButton();
     renderFilters();
+    updateURL(true);
   });
 }
 
@@ -422,7 +558,36 @@ function setupExpandJson() {
   });
 }
 
+// Handle browser navigation
+window.addEventListener("popstate", () => {
+  loadStateFromURL();
+  renderFilters();
+  sendSearchRequest();
+});
+
 // Initialize
+document.addEventListener("DOMContentLoaded", () => {
+  domContentLoaded = true;
+  if (wsOpen) {
+    initApplication();
+  }
+});
+
+function onWebsocketOpen() {
+  wsOpen = true;
+  if (domContentLoaded) {
+    initApplication();
+  }
+  renderStatus();
+  sendSearchRequest();
+}
+
+function initApplication() {
+  loadStateFromURL();
+  renderStatus();
+  sendSearchRequest();
+}
+
 connectWS();
 setupSearch();
 setupFilterSearch();

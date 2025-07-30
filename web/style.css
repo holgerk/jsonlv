@@ -240,6 +240,50 @@ body {
     border-radius: 4px 4px 0px 0px;
     overflow: hidden;
     text-overflow: ellipsis;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.filter-title span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sticky-toggle {
+    background: none;
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 3px;
+    transition:
+        background 0.2s,
+        transform 0.2s;
+    opacity: 0.6;
+    margin-left: 8px;
+}
+
+.sticky-toggle:hover {
+    background: #93a1a1;
+    opacity: 1;
+    transform: scale(1.1);
+}
+
+.sticky-toggle.active {
+    opacity: 1;
+    background: #2aa198;
+    color: #fdf6e3;
+}
+
+.filter-box.sticky {
+    border: 2px solid #2aa198;
+    box-shadow: 0 2px 4px rgba(42, 161, 152, 0.2);
+}
+
+.filter-box.sticky .filter-title {
+    background: #d6f5f3;
+    border-bottom-color: #2aa198;
 }
 
 .filter-btn {
