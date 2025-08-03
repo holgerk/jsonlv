@@ -281,7 +281,7 @@ func TestLogMatchesFilter(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			payload := SearchPayload{Filters: tt.filter}
-			result := lm.logMatches(log, &payload)
+			result := lm.logMatches(log, payload)
 			if result != tt.expected {
 				t.Errorf("%v - Expected %v, got %v", tt.name, tt.expected, result)
 			}
@@ -364,7 +364,7 @@ func TestLogMatchesSearch(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			payload := SearchPayload{SearchTerm: tt.searchTerm}
-			result := lm.logMatches(log, &payload)
+			result := lm.logMatches(log, payload)
 			if result != tt.expected {
 				t.Errorf("Expected %v, got %v", tt.expected, result)
 			}

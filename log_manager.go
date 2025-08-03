@@ -185,7 +185,7 @@ func (lm *LogManager) SearchLogs(searchPayload SearchPayload, maxLogs int) Searc
 	for i := len(lm.logOrder) - 1; i >= 0; i-- {
 		entryId := lm.logOrder[i]
 		if entry, ok := lm.logStore[entryId]; ok {
-			if lm.logMatches(entry.Raw, &searchPayload) {
+			if lm.logMatches(entry.Raw, searchPayload) {
 				if count < maxLogs {
 					result = append([]JsonObject{entry.Raw}, result...)
 				}
@@ -214,14 +214,14 @@ func (lm *LogManager) SearchLogs(searchPayload SearchPayload, maxLogs int) Searc
 func (lm *LogManager) FilterLogs(logs []JsonObject, payload SearchPayload) []JsonObject {
 	filteredLogs := []JsonObject{}
 	for _, log := range logs {
-		if lm.logMatches(log, &payload) {
+		if lm.logMatches(log, payload) {
 			filteredLogs = append(filteredLogs, log)
 		}
 	}
 	return filteredLogs
 }
 
-func (lm *LogManager) logMatches(raw JsonObject, payload *SearchPayload) bool {
+func (lm *LogManager) logMatches(raw JsonObject, payload SearchPayload) bool {
 	return lm.logMatchesFilter(raw, payload.Filters) && lm.logMatchesSearch(raw, payload.SearchTerm)
 }
 
