@@ -1,6 +1,7 @@
 package main
 
 import (
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -24,7 +25,7 @@ func (ls *LogSearch) FilterLogs(logs []JsonObject, payload SearchPayload) []Json
 }
 
 func (ls *LogSearch) logMatches(raw JsonObject, payload SearchPayload) bool {
-	return ls.logMatchesFilter(raw, payload.Filters) && ls.logMatchesSearch(raw, payload.SearchTerm)
+	return ls.logMatchesFilter(raw, payload.Filters) && ls.logMatchesSearchWithPayload(raw, payload)
 }
 
 // logMatchesFilter checks if a log entry matches the given filters
@@ -41,6 +42,34 @@ func (ls *LogSearch) logMatchesFilter(raw JsonObject, filter map[PropName][]Prop
 		}
 	}
 	return true
+}
+
+// logMatchesSearchWithPayload checks if a log entry matches the search payload
+func (ls *LogSearch) logMatchesSearchWithPayload(raw JsonObject, payload SearchPayload) bool {
+	if payload.SearchTerm == "" {
+		return true
+	}
+
+	// Search in flattened structure
+	flat := flattenMap(raw)
+
+	if payload.Regexp {
+		// Regexp search - case insensitive
+		re, err := regexp.Compile("(?i)" + payload.SearchTerm)
+		if err != nil {
+			// If regexp is invalid, fall back to string search
+			return ls.logMatchesSearch(raw, payload.SearchTerm)
+		}
+		for _, propValue := range flat {
+			if re.MatchString(propValue) {
+				return true
+			}
+		}
+		return false
+	} else {
+		// Regular string search
+		return ls.logMatchesSearch(raw, payload.SearchTerm)
+	}
 }
 
 // logMatchesSearch checks if a log entry matches the search term
