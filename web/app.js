@@ -90,7 +90,7 @@ function loadStateFromURL() {
   } else {
     searchTerm = "";
   }
-  updateSearchClearButton();
+  updateClearButton(searchTerm, searchClear);
 
   // Load regexp flag
   const regexpParam = params.get("regexp");
@@ -109,7 +109,7 @@ function loadStateFromURL() {
   } else {
     filterSearchTerm = "";
   }
-  updateFilterClearButton();
+  updateClearButton(filterSearchTerm, filterSearchClear);
 
   // Load sticky filters
   const stickyParam = params.get("sticky");
@@ -292,7 +292,7 @@ function setupSearch() {
   let searchTimeout;
   searchInput.addEventListener("input", (e) => {
     searchTerm = e.target.value;
-    updateSearchClearButton();
+    updateClearButton(searchTerm, searchClear);
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
       updateURL();
@@ -308,12 +308,10 @@ function setupSearch() {
   });
 
   // Clear button functionality
-  searchClear.addEventListener("click", () => {
-    searchInput.value = "";
+  setupClearButton(searchInput, searchClear, () => {
     searchTerm = "";
     regexpCheckbox.checked = false;
     regexpEnabled = false;
-    updateSearchClearButton();
     updateURL();
     sendSearchRequest();
   });
@@ -330,35 +328,17 @@ function resetAllFilters() {
 function setupFilterSearch() {
   filterSearchInput.addEventListener("input", (e) => {
     filterSearchTerm = e.target.value;
-    updateFilterClearButton();
+    updateClearButton(filterSearchTerm, filterSearchClear);
     renderFilters();
     updateURL(true);
   });
 
   // Clear button functionality for filter search
-  filterSearchClear.addEventListener("click", () => {
-    filterSearchInput.value = "";
+  setupClearButton(filterSearchInput, filterSearchClear, () => {
     filterSearchTerm = "";
-    updateFilterClearButton();
     renderFilters();
     updateURL(true);
   });
-}
-
-function updateSearchClearButton() {
-  if (searchTerm.trim()) {
-    searchClear.classList.add("visible");
-  } else {
-    searchClear.classList.remove("visible");
-  }
-}
-
-function updateFilterClearButton() {
-  if (filterSearchTerm.trim()) {
-    filterSearchClear.classList.add("visible");
-  } else {
-    filterSearchClear.classList.remove("visible");
-  }
 }
 
 function setupFullscreen() {
@@ -582,6 +562,24 @@ function setupExpandJson() {
   });
 }
 
+// Generic function to update clear button visibility
+function updateClearButton(inputValue, clearButton) {
+  if (inputValue.trim()) {
+    clearButton.classList.add("visible");
+  } else {
+    clearButton.classList.remove("visible");
+  }
+}
+
+// Generic function to setup clear button functionality
+function setupClearButton(inputElement, clearButton, onClear) {
+  clearButton.addEventListener("click", () => {
+    inputElement.value = "";
+    updateClearButton("", clearButton);
+    if (onClear) onClear();
+  });
+}
+
 // Handle browser navigation
 window.addEventListener("popstate", () => {
   loadStateFromURL();
@@ -619,5 +617,5 @@ setupResetFilters();
 setupFullscreen();
 setupResizer();
 setupExpandJson();
-updateSearchClearButton();
-updateFilterClearButton();
+updateClearButton(searchTerm, searchClear);
+updateClearButton(filterSearchTerm, filterSearchClear);
