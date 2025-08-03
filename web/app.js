@@ -5,6 +5,7 @@ const resizer = document.getElementById("resizer");
 const logPanel = document.getElementById("log-panel");
 const searchInput = document.getElementById("search-input");
 const searchClear = document.getElementById("search-clear");
+const regexpCheckbox = document.getElementById("regexp-checkbox");
 const filterSearchInput = document.getElementById("filter-search-input");
 const filterSearchClear = document.getElementById("filter-search-clear");
 const resetFiltersBtn = document.getElementById("reset-filters");
@@ -15,6 +16,7 @@ let domContentLoaded = false;
 let reconnectInterval = null;
 let filters = {};
 let searchTerm = "";
+let regexpEnabled = false;
 let filterSearchTerm = "";
 let index = {};
 let logs = [];
@@ -35,6 +37,11 @@ function updateURL() {
   // Add search term
   if (searchTerm.trim()) {
     params.set("search", searchTerm.trim());
+  }
+
+  // Add regexp flag
+  if (regexpEnabled) {
+    params.set("regexp", "true");
   }
 
   // Add filter search term
@@ -84,6 +91,13 @@ function loadStateFromURL() {
     searchTerm = "";
   }
   updateSearchClearButton();
+
+  // Load regexp flag
+  const regexpParam = params.get("regexp");
+  regexpEnabled = regexpParam === "true";
+  if (regexpCheckbox) {
+    regexpCheckbox.checked = regexpEnabled;
+  }
 
   // Load filter search term
   const filterSearchParam = params.get("filterSearch");
@@ -163,6 +177,7 @@ function sendSearchRequest() {
   if (searchTerm.trim()) {
     payload.searchTerm = searchTerm.trim();
   }
+  payload.regexp = regexpEnabled;
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "set_search", payload: payload }));
   } else {
@@ -285,10 +300,19 @@ function setupSearch() {
     }, 300); // Debounce search requests
   });
 
+  // Regexp checkbox functionality
+  regexpCheckbox.addEventListener("change", (e) => {
+    regexpEnabled = e.target.checked;
+    updateURL();
+    sendSearchRequest();
+  });
+
   // Clear button functionality
   searchClear.addEventListener("click", () => {
     searchInput.value = "";
     searchTerm = "";
+    regexpCheckbox.checked = false;
+    regexpEnabled = false;
     updateSearchClearButton();
     updateURL();
     sendSearchRequest();
