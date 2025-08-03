@@ -16,16 +16,18 @@
             <span>turbo-tail</span>
             <span id="status"></span>
             <div id="search-container">
-                <input
-                    type="text"
-                    id="search-input"
-                    placeholder="Search logs..."
-                />
+                <div class="search-input-wrapper">
+                    <input
+                        type="text"
+                        id="search-input"
+                        placeholder="Search logs..."
+                    />
+                    <button id="search-clear" title="Clear search">×</button>
+                </div>
                 <label id="regexp-label">
                     <input type="checkbox" id="regexp-checkbox" />
                     Regexp
                 </label>
-                <button id="search-clear" title="Clear search">×</button>
             </div>
             <div id="controls">
                 <button id="fullscreen-toggle">⛶</button>
@@ -34,17 +36,19 @@
         <div id="main">
             <div id="filter-panel">
                 <div id="filter-search-container">
-                    <input
-                        type="text"
-                        id="filter-search-input"
-                        placeholder="Filter properties..."
-                    />
-                    <button
-                        id="filter-search-clear"
-                        title="Clear filter search"
-                    >
-                        ×
-                    </button>
+                    <div class="filter-search-input-wrapper">
+                        <input
+                            type="text"
+                            id="filter-search-input"
+                            placeholder="Filter properties..."
+                        />
+                        <button
+                            id="filter-search-clear"
+                            title="Clear filter search"
+                        >
+                            ×
+                        </button>
+                    </div>
                     <button id="reset-filters" title="Reset all filters">
                         Reset
                     </button>

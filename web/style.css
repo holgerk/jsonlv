@@ -24,21 +24,26 @@ body {
 #search-container {
     margin-left: auto;
     margin-right: 16px;
-    position: relative;
     display: flex;
     align-items: center;
+}
+
+/* Wrapper for search input with clear button */
+.search-input-wrapper {
+    position: relative;
+    display: inline-block;
 }
 
 #search-input {
     background: #fdf6e3;
     border: 1px solid #93a1a1;
     border-radius: 4px;
-    padding: 6px 12px;
-    padding-right: 32px;
+    padding: 6px 32px 6px 12px; /* Fixed right padding for clear button */
     font-size: 14px;
     color: #586e75;
     width: 200px;
     transition: border-color 0.2s;
+    box-sizing: border-box;
 }
 
 #search-input:focus {
@@ -54,6 +59,8 @@ body {
 #search-clear {
     position: absolute;
     right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
     background: none;
     border: none;
     color: #93a1a1;
@@ -78,6 +85,16 @@ body {
 #search-clear.visible {
     opacity: 1;
     pointer-events: auto;
+}
+
+#regexp-label {
+    margin-left: 12px;
+    font-size: 14px;
+    font-weight: normal;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
 }
 
 #controls {
@@ -120,24 +137,28 @@ body {
 #filter-search-container {
     padding: 12px 8px 8px 8px;
     border-bottom: 1px solid #93a1a1;
-    position: relative;
     display: flex;
     align-items: center;
     gap: 8px;
+}
+
+/* Wrapper for filter search input with clear button */
+.filter-search-input-wrapper {
+    position: relative;
+    flex: 1;
+    min-width: 0; /* Allow shrinking */
 }
 
 #filter-search-input {
     background: #fdf6e3;
     border: 1px solid #93a1a1;
     border-radius: 4px;
-    padding: 6px 12px;
-    padding-right: 32px;
+    padding: 6px 32px 6px 12px; /* Fixed right padding for clear button */
     font-size: 14px;
     color: #586e75;
-    width: 145px;
+    width: 100%;
     box-sizing: border-box;
     transition: border-color 0.2s;
-    flex: 1;
 }
 
 #filter-search-input:focus {
@@ -152,7 +173,9 @@ body {
 
 #filter-search-clear {
     position: absolute;
-    right: 80px;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
     background: none;
     border: none;
     color: #93a1a1;
@@ -191,6 +214,7 @@ body {
     transition:
         background 0.2s,
         color 0.2s;
+    flex-shrink: 0; /* Prevent shrinking */
 }
 
 #reset-filters:hover {
