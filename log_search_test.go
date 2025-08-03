@@ -105,3 +105,35 @@ func TestLogMatchesSearch(t *testing.T) {
 		})
 	}
 }
+
+func TestLogMatchesSearchWithRegexp(t *testing.T) {
+	ls := &LogSearch{}
+
+	tests := []struct {
+		name       string
+		log        JsonObject
+		payload    SearchPayload
+		expected   bool
+	}{
+		{
+			name: "regexp pattern should match",
+			log: JsonObject{
+				"message": "error 404 occurred",
+			},
+			payload: SearchPayload{
+				SearchTerm: "error \\d+",
+				Regexp:     true,
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ls.logMatches(tt.log, tt.payload)
+			if result != tt.expected {
+				t.Errorf("logMatches() with regexp = %v, expected %v", result, tt.expected)
+			}
+		})
+	}
+}
