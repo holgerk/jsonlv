@@ -8,6 +8,7 @@ import (
 type SearchPayload struct {
 	SearchTerm string        `json:"searchTerm"`
 	Filters    SearchFilters `json:"filters"`
+	Regexp     bool          `json:"regexp"`
 }
 
 type LogSearch struct{}

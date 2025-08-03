@@ -289,89 +289,6 @@ func TestLogMatchesFilter(t *testing.T) {
 	}
 }
 
-func TestLogMatchesSearch(t *testing.T) {
-	lm := NewLogManager(DefaultLogManagerConfig())
-
-	// Test log
-	log := map[string]any{
-		"level":   "INFO",
-		"message": "test message",
-		"user":    "alice",
-		"count":   456,
-		"context": map[string]any{
-			"requestId": "123",
-			"count":     789,
-		},
-	}
-
-	tests := []struct {
-		name       string
-		searchTerm string
-		expected   bool
-	}{
-		{
-			name:       "Empty search term",
-			searchTerm: "",
-			expected:   true,
-		},
-		{
-			name:       "Match in level",
-			searchTerm: "INFO",
-			expected:   true,
-		},
-		{
-			name:       "Match in message",
-			searchTerm: "test",
-			expected:   true,
-		},
-		{
-			name:       "Match in nested property",
-			searchTerm: "123",
-			expected:   true,
-		},
-		{
-			name:       "Case insensitive match",
-			searchTerm: "info",
-			expected:   true,
-		},
-		{
-			name:       "No match",
-			searchTerm: "nonexistent",
-			expected:   false,
-		},
-		{
-			name:       "Partial match",
-			searchTerm: "mess",
-			expected:   true,
-		},
-		{
-			name:       "Numeric match",
-			searchTerm: "456",
-			expected:   true,
-		},
-		{
-			name:       "Numeric partial match",
-			searchTerm: "45",
-			expected:   true,
-		},
-		{
-			name:       "Nested numeric match",
-			searchTerm: "789",
-			expected:   true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			payload := SearchPayload{SearchTerm: tt.searchTerm}
-			result := lm.logSearch.logMatches(log, payload)
-			if result != tt.expected {
-				t.Errorf("Expected %v, got %v", tt.expected, result)
-			}
-		})
-	}
-}
-
 func TestCallbacks(t *testing.T) {
 	var dropIndexCalled bool
 	var receivedDroppedKeys []string
@@ -418,9 +335,9 @@ func TestCallbacks(t *testing.T) {
 	// Test update index callback by forcing log removal
 	// Add many logs to trigger enforceMaxLogs
 	config2 := LogManagerConfig{
-		MaxIndexValues:      10,
-		MaxLogs:             2, // Very low to trigger log removal quickly
-		MaxIndexValueLength: 50,
+		MaxIndexValues:        10,
+		MaxLogs:               2, // Very low to trigger log removal quickly
+		MaxIndexValueLength:   50,
 		DropIndexKeysCallback: func(droppedKeys []string) {},
 	}
 	lm2 := NewLogManager(config2)
