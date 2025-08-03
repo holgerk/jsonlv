@@ -25,7 +25,7 @@ func (ls *LogSearch) FilterLogs(logs []JsonObject, payload SearchPayload) []Json
 }
 
 func (ls *LogSearch) logMatches(raw JsonObject, payload SearchPayload) bool {
-	return ls.logMatchesFilter(raw, payload.Filters) && ls.logMatchesSearchWithPayload(raw, payload)
+	return ls.logMatchesFilter(raw, payload.Filters) && ls.logMatchesSearch(raw, payload.SearchTerm, payload.Regexp)
 }
 
 // logMatchesFilter checks if a log entry matches the given filters
@@ -44,21 +44,27 @@ func (ls *LogSearch) logMatchesFilter(raw JsonObject, filter map[PropName][]Prop
 	return true
 }
 
-// logMatchesSearchWithPayload checks if a log entry matches the search payload
-func (ls *LogSearch) logMatchesSearchWithPayload(raw JsonObject, payload SearchPayload) bool {
-	if payload.SearchTerm == "" {
+// logMatchesSearch checks if a log entry matches the search term
+func (ls *LogSearch) logMatchesSearch(raw JsonObject, searchTerm string, useRegexp bool) bool {
+	if searchTerm == "" {
 		return true
 	}
 
 	// Search in flattened structure
 	flat := flattenMap(raw)
 
-	if payload.Regexp {
+	if useRegexp {
 		// Regexp search - case insensitive
-		re, err := regexp.Compile("(?i)" + payload.SearchTerm)
+		re, err := regexp.Compile("(?i)" + searchTerm)
 		if err != nil {
 			// If regexp is invalid, fall back to string search
-			return ls.logMatchesSearch(raw, payload.SearchTerm)
+			searchTerm = strings.ToLower(searchTerm)
+			for _, propValue := range flat {
+				if strings.Contains(strings.ToLower(propValue), searchTerm) {
+					return true
+				}
+			}
+			return false
 		}
 		for _, propValue := range flat {
 			if re.MatchString(propValue) {
@@ -68,24 +74,12 @@ func (ls *LogSearch) logMatchesSearchWithPayload(raw JsonObject, payload SearchP
 		return false
 	} else {
 		// Regular string search
-		return ls.logMatchesSearch(raw, payload.SearchTerm)
-	}
-}
-
-// logMatchesSearch checks if a log entry matches the search term
-func (ls *LogSearch) logMatchesSearch(raw JsonObject, searchTerm string) bool {
-	if searchTerm == "" {
-		return true
-	}
-	searchTerm = strings.ToLower(searchTerm)
-
-	// Search in flattened structure
-	flat := flattenMap(raw)
-
-	for _, propValue := range flat {
-		if strings.Contains(strings.ToLower(propValue), searchTerm) {
-			return true
+		searchTerm = strings.ToLower(searchTerm)
+		for _, propValue := range flat {
+			if strings.Contains(strings.ToLower(propValue), searchTerm) {
+				return true
+			}
 		}
+		return false
 	}
-	return false
 }

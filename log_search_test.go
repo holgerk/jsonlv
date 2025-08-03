@@ -11,36 +11,42 @@ func TestLogMatchesSearch(t *testing.T) {
 		name       string
 		log        JsonObject
 		searchTerm string
+		regexp     bool
 		expected   bool
 	}{
 		{
 			name:       "empty search term returns true",
 			log:        JsonObject{"message": "test log"},
 			searchTerm: "",
+			regexp:     false,
 			expected:   true,
 		},
 		{
 			name:       "exact match in string field",
 			log:        JsonObject{"message": "error occurred"},
 			searchTerm: "error",
+			regexp:     false,
 			expected:   true,
 		},
 		{
 			name:       "case insensitive match",
 			log:        JsonObject{"level": "ERROR"},
 			searchTerm: "error",
+			regexp:     false,
 			expected:   true,
 		},
 		{
 			name:       "partial match",
 			log:        JsonObject{"message": "authentication failed"},
 			searchTerm: "auth",
+			regexp:     false,
 			expected:   true,
 		},
 		{
 			name:       "no match",
 			log:        JsonObject{"message": "success"},
 			searchTerm: "error",
+			regexp:     false,
 			expected:   false,
 		},
 		{
@@ -52,6 +58,7 @@ func TestLogMatchesSearch(t *testing.T) {
 				},
 			},
 			searchTerm: "POST",
+			regexp:     false,
 			expected:   true,
 		},
 		{
@@ -65,6 +72,7 @@ func TestLogMatchesSearch(t *testing.T) {
 				},
 			},
 			searchTerm: "john",
+			regexp:     false,
 			expected:   true,
 		},
 		{
@@ -74,6 +82,7 @@ func TestLogMatchesSearch(t *testing.T) {
 				"count":  42,
 			},
 			searchTerm: "404",
+			regexp:     false,
 			expected:   true,
 		},
 		{
@@ -84,6 +93,7 @@ func TestLogMatchesSearch(t *testing.T) {
 				"status":  200,
 			},
 			searchTerm: "error",
+			regexp:     false,
 			expected:   false,
 		},
 		{
@@ -92,13 +102,35 @@ func TestLogMatchesSearch(t *testing.T) {
 				"message": "user login successful",
 			},
 			searchTerm: "login",
+			regexp:     false,
+			expected:   true,
+		},
+		{
+			name:       "regexp pattern match",
+			log:        JsonObject{"message": "error 404 occurred"},
+			searchTerm: "error \\d+",
+			regexp:     true,
+			expected:   true,
+		},
+		{
+			name:       "regexp pattern no match",
+			log:        JsonObject{"message": "error abc occurred"},
+			searchTerm: "error \\d+",
+			regexp:     true,
+			expected:   false,
+		},
+		{
+			name:       "invalid regexp falls back to string search",
+			log:        JsonObject{"message": "error [occurred"},
+			searchTerm: "error [",
+			regexp:     true,
 			expected:   true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := ls.logMatchesSearch(tt.log, tt.searchTerm)
+			result := ls.logMatchesSearch(tt.log, tt.searchTerm, tt.regexp)
 			if result != tt.expected {
 				t.Errorf("logMatchesSearch() = %v, expected %v", result, tt.expected)
 			}
@@ -106,34 +138,3 @@ func TestLogMatchesSearch(t *testing.T) {
 	}
 }
 
-func TestLogMatchesSearchWithRegexp(t *testing.T) {
-	ls := &LogSearch{}
-
-	tests := []struct {
-		name       string
-		log        JsonObject
-		payload    SearchPayload
-		expected   bool
-	}{
-		{
-			name: "regexp pattern should match",
-			log: JsonObject{
-				"message": "error 404 occurred",
-			},
-			payload: SearchPayload{
-				SearchTerm: "error \\d+",
-				Regexp:     true,
-			},
-			expected: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := ls.logMatches(tt.log, tt.payload)
-			if result != tt.expected {
-				t.Errorf("logMatches() with regexp = %v, expected %v", result, tt.expected)
-			}
-		})
-	}
-}
