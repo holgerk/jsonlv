@@ -128,7 +128,7 @@ func sendBufferedLogs(logManager *LogManager) {
 
 		wsClientsMu.Lock()
 		for _, client := range wsClients {
-			logsToSend := logManager.FilterLogs(result.Logs, client.searchPayload)
+			logsToSend := logManager.logSearch.FilterLogs(result.Logs, client.searchPayload)
 			if len(logsToSend) > 0 {
 				wsSend(client, JsonObject{
 					"type":    "add_logs",

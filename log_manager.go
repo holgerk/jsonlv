@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
-	"strings"
 	"sync"
 )
 
@@ -28,11 +27,6 @@ type LogRecord struct {
 type BufferedLogsResult struct {
 	Logs    []JsonObject
 	HasLogs bool
-}
-
-type SearchPayload struct {
-	SearchTerm string        `json:"searchTerm"`
-	Filters    SearchFilters `json:"filters"`
 }
 
 type SearchLogsResult struct {
@@ -76,6 +70,9 @@ type LogManager struct {
 	// ID generation
 	idCounter   uint
 	idCounterMu sync.Mutex
+
+	// Search
+	logSearch LogSearch
 }
 
 // ============================================================================
@@ -91,6 +88,7 @@ func NewLogManager(config LogManagerConfig) *LogManager {
 		blacklist: make(map[PropName]bool),
 		config:    config,
 		idCounter: 0,
+		logSearch: LogSearch{},
 	}
 }
 
@@ -185,7 +183,7 @@ func (lm *LogManager) SearchLogs(searchPayload SearchPayload, maxLogs int) Searc
 	for i := len(lm.logOrder) - 1; i >= 0; i-- {
 		entryId := lm.logOrder[i]
 		if entry, ok := lm.logStore[entryId]; ok {
-			if lm.logMatches(entry.Raw, searchPayload) {
+			if lm.logSearch.logMatches(entry.Raw, searchPayload) {
 				if count < maxLogs {
 					result = append([]JsonObject{entry.Raw}, result...)
 				}
@@ -209,54 +207,6 @@ func (lm *LogManager) SearchLogs(searchPayload SearchPayload, maxLogs int) Searc
 		Logs:        result,
 		IndexCounts: newCounts,
 	}
-}
-
-func (lm *LogManager) FilterLogs(logs []JsonObject, payload SearchPayload) []JsonObject {
-	filteredLogs := []JsonObject{}
-	for _, log := range logs {
-		if lm.logMatches(log, payload) {
-			filteredLogs = append(filteredLogs, log)
-		}
-	}
-	return filteredLogs
-}
-
-func (lm *LogManager) logMatches(raw JsonObject, payload SearchPayload) bool {
-	return lm.logMatchesFilter(raw, payload.Filters) && lm.logMatchesSearch(raw, payload.SearchTerm)
-}
-
-// logMatchesFilter checks if a log entry matches the given filters
-func (lm *LogManager) logMatchesFilter(raw JsonObject, filter map[PropName][]PropValue) bool {
-	if filter == nil {
-		return true
-	}
-	flat := flattenMap(raw)
-	for propName, propValues := range filter {
-		propValue := flat[propName]
-		match := slices.Contains(propValues, propValue)
-		if !match {
-			return false
-		}
-	}
-	return true
-}
-
-// logMatchesSearch checks if a log entry matches the search term
-func (lm *LogManager) logMatchesSearch(raw JsonObject, searchTerm string) bool {
-	if searchTerm == "" {
-		return true
-	}
-	searchTerm = strings.ToLower(searchTerm)
-
-	// Search in flattened structure
-	flat := flattenMap(raw)
-
-	for _, propValue := range flat {
-		if strings.Contains(strings.ToLower(propValue), searchTerm) {
-			return true
-		}
-	}
-	return false
 }
 
 // enforceMaxLogs enforces the maximum number of stored logs
