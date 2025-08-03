@@ -388,7 +388,7 @@ function renderLogs() {
     // Format message if present
     let message = "";
     if (log.message) {
-      message = `<div class="message">${escapeHtml(log.message)}</div>`;
+      message = `<div class="message">${escapeHtmlAndHighlightSearchTerm(log.message)}</div>`;
     }
 
     // Format other properties
@@ -463,16 +463,18 @@ function formatValue(value) {
 
   let stringValue = value.toString();
 
+  return escapeHtmlAndHighlightSearchTerm(stringValue);
+}
+
+function escapeHtmlAndHighlightSearchTerm(stringValue) {
   stringValue = highlightSearchTerm(stringValue);
 
   // Escape HTML but preserve our highlight spans
-  stringValue = stringValue
+  return stringValue
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/&lt;span class="highlight"&gt;/g, '<span class="highlight">')
     .replace(/&lt;\/span&gt;/g, "</span>");
-
-  return stringValue;
 }
 
 function syntaxHighlightJson(json) {
