@@ -1,3 +1,4 @@
+// DOM Elements - Keep these as constants
 const statusEl = document.getElementById("status");
 const filterPanel = document.getElementById("filter-panel");
 const filterContent = document.getElementById("filter-content");
@@ -10,134 +11,290 @@ const filterSearchInput = document.getElementById("filter-search-input");
 const filterSearchClear = document.getElementById("filter-search-clear");
 const resetFiltersBtn = document.getElementById("reset-filters");
 
-let ws;
-let wsOpen = false;
-let domContentLoaded = false;
-let reconnectInterval = null;
-let filters = {};
-let searchTerm = "";
-let regexpEnabled = false;
-let filterSearchTerm = "";
-let index = {};
-let logs = [];
-let serverStatus = null;
-let stickyFilters = new Set();
+// Application State Manager
+class AppStateManager {
+  constructor() {
+    // Application state
+    this.state = {
+      // Search & Filter state (persisted in URL)
+      filters: {},
+      searchTerm: "",
+      regexpEnabled: false,
+      filterSearchTerm: "",
+      stickyFilters: new Set(),
 
-let isResizing = false;
+      // Runtime state (not persisted)
+      index: {},
+      logs: [],
+      serverStatus: null,
+    };
 
-// URL state management
-function updateURL() {
-  const params = new URLSearchParams();
+    // Connection state
+    this.connection = {
+      ws: null,
+      wsOpen: false,
+      domContentLoaded: false,
+      reconnectInterval: null,
+    };
 
-  // Add filters
-  if (Object.keys(filters).length > 0) {
-    params.set("filters", JSON.stringify(filters));
+    // UI state
+    this.ui = {
+      isResizing: false,
+    };
   }
 
-  // Add search term
-  if (searchTerm.trim()) {
-    params.set("search", searchTerm.trim());
+  // State getters
+  getFilters() {
+    return this.state.filters;
+  }
+  getSearchTerm() {
+    return this.state.searchTerm;
+  }
+  getRegexpEnabled() {
+    return this.state.regexpEnabled;
+  }
+  getFilterSearchTerm() {
+    return this.state.filterSearchTerm;
+  }
+  getStickyFilters() {
+    return this.state.stickyFilters;
+  }
+  getIndex() {
+    return this.state.index;
+  }
+  getLogs() {
+    return this.state.logs;
+  }
+  getServerStatus() {
+    return this.state.serverStatus;
   }
 
-  // Add regexp flag
-  if (regexpEnabled) {
-    params.set("regexp", "true");
+  // State setters with URL persistence
+  setFilters(filters) {
+    this.state.filters = filters;
+    this.updateURL();
   }
 
-  // Add filter search term
-  if (filterSearchTerm.trim()) {
-    params.set("filterSearch", filterSearchTerm.trim());
+  setSearchTerm(searchTerm) {
+    this.state.searchTerm = searchTerm;
+    this.updateURL();
   }
 
-  // Add sticky filters
-  if (stickyFilters.size > 0) {
-    params.set("sticky", Array.from(stickyFilters).join(","));
+  setRegexpEnabled(enabled) {
+    this.state.regexpEnabled = enabled;
+    this.updateURL();
   }
 
-  const actualUrl = `${window.location.pathname}${window.location.search}`;
-  const newURL = `${window.location.pathname}${params.toString() ? "?" + params.toString() : ""}`;
-  if (newURL != actualUrl) {
-    window.history.pushState({}, "", newURL);
+  setFilterSearchTerm(term) {
+    this.state.filterSearchTerm = term;
+    this.updateURL();
   }
-}
 
-function loadStateFromURL() {
-  const params = new URLSearchParams(window.location.search);
+  setStickyFilters(stickyFilters) {
+    this.state.stickyFilters = stickyFilters;
+    this.updateURL();
+  }
 
-  // Load filters
-  const filtersParam = params.get("filters");
-  if (filtersParam) {
-    try {
-      const parsedFilters = JSON.parse(filtersParam);
-      if (typeof parsedFilters === "object" && parsedFilters !== null) {
-        filters = parsedFilters;
+  // Runtime state setters (no URL persistence)
+  setIndex(index) {
+    this.state.index = index;
+  }
+
+  setLogs(logs) {
+    this.state.logs = logs;
+  }
+
+  setServerStatus(status) {
+    this.state.serverStatus = status;
+  }
+
+  // Batch update for filters
+  updateFilters(key, value, add = true) {
+    if (!this.state.filters[key]) this.state.filters[key] = [];
+
+    const idx = this.state.filters[key].indexOf(value);
+    if (add && idx === -1) {
+      this.state.filters[key].push(value);
+    } else if (!add && idx !== -1) {
+      this.state.filters[key].splice(idx, 1);
+    }
+
+    if (this.state.filters[key].length === 0) {
+      delete this.state.filters[key];
+    }
+
+    this.updateURL();
+  }
+
+  toggleStickyFilter(key) {
+    if (this.state.stickyFilters.has(key)) {
+      this.state.stickyFilters.delete(key);
+    } else {
+      this.state.stickyFilters.add(key);
+    }
+    this.updateURL();
+  }
+
+  resetFilters() {
+    this.state.filters = {};
+    this.updateURL();
+  }
+
+  // URL state management
+  updateURL() {
+    const params = new URLSearchParams();
+
+    // Add filters
+    if (Object.keys(this.state.filters).length > 0) {
+      params.set("filters", JSON.stringify(this.state.filters));
+    }
+
+    // Add search term
+    if (this.state.searchTerm.trim()) {
+      params.set("search", this.state.searchTerm.trim());
+    }
+
+    // Add regexp flag
+    if (this.state.regexpEnabled) {
+      params.set("regexp", "true");
+    }
+
+    // Add filter search term
+    if (this.state.filterSearchTerm.trim()) {
+      params.set("filterSearch", this.state.filterSearchTerm.trim());
+    }
+
+    // Add sticky filters
+    if (this.state.stickyFilters.size > 0) {
+      params.set("sticky", Array.from(this.state.stickyFilters).join(","));
+    }
+
+    const actualUrl = `${window.location.pathname}${window.location.search}`;
+    const newURL = `${window.location.pathname}${params.toString() ? "?" + params.toString() : ""}`;
+    if (newURL !== actualUrl) {
+      window.history.pushState({}, "", newURL);
+    }
+  }
+
+  loadStateFromURL() {
+    const params = new URLSearchParams(window.location.search);
+
+    // Load filters
+    const filtersParam = params.get("filters");
+    if (filtersParam) {
+      try {
+        const parsedFilters = JSON.parse(filtersParam);
+        if (typeof parsedFilters === "object" && parsedFilters !== null) {
+          this.state.filters = parsedFilters;
+        }
+      } catch (e) {
+        console.warn("Invalid filters in URL:", e);
+        this.state.filters = {};
       }
-    } catch (e) {
-      console.warn("Invalid filters in URL:", e);
-      filters = {};
+    } else {
+      this.state.filters = {};
     }
-  } else {
-    filters = {};
-  }
 
-  // Load search term
-  const searchParam = params.get("search");
-  if (searchParam) {
-    searchTerm = searchParam;
+    // Load search term
+    const searchParam = params.get("search");
+    this.state.searchTerm = searchParam || "";
     if (searchInput) {
-      searchInput.value = searchTerm;
+      searchInput.value = this.state.searchTerm;
     }
-  } else {
-    searchTerm = "";
-  }
-  updateClearButton(searchTerm, searchClear);
+    updateClearButton(this.state.searchTerm, searchClear);
 
-  // Load regexp flag
-  const regexpParam = params.get("regexp");
-  regexpEnabled = regexpParam === "true";
-  if (regexpCheckbox) {
-    regexpCheckbox.checked = regexpEnabled;
-  }
+    // Load regexp flag
+    const regexpParam = params.get("regexp");
+    this.state.regexpEnabled = regexpParam === "true";
+    if (regexpCheckbox) {
+      regexpCheckbox.checked = this.state.regexpEnabled;
+    }
 
-  // Load filter search term
-  const filterSearchParam = params.get("filterSearch");
-  if (filterSearchParam) {
-    filterSearchTerm = filterSearchParam;
+    // Load filter search term
+    const filterSearchParam = params.get("filterSearch");
+    this.state.filterSearchTerm = filterSearchParam || "";
     if (filterSearchInput) {
-      filterSearchInput.value = filterSearchTerm;
+      filterSearchInput.value = this.state.filterSearchTerm;
     }
-  } else {
-    filterSearchTerm = "";
-  }
-  updateClearButton(filterSearchTerm, filterSearchClear);
+    updateClearButton(this.state.filterSearchTerm, filterSearchClear);
 
-  // Load sticky filters
-  const stickyParam = params.get("sticky");
-  if (stickyParam) {
-    stickyFilters = new Set(stickyParam.split(",").filter((s) => s.trim()));
-  } else {
-    stickyFilters = new Set();
+    // Load sticky filters
+    const stickyParam = params.get("sticky");
+    if (stickyParam) {
+      this.state.stickyFilters = new Set(
+        stickyParam.split(",").filter((s) => s.trim()),
+      );
+    } else {
+      this.state.stickyFilters = new Set();
+    }
+  }
+
+  // Connection management
+  getWebSocket() {
+    return this.connection.ws;
+  }
+  setWebSocket(ws) {
+    this.connection.ws = ws;
+  }
+
+  isWebSocketOpen() {
+    return this.connection.wsOpen;
+  }
+  setWebSocketOpen(open) {
+    this.connection.wsOpen = open;
+  }
+
+  isDOMContentLoaded() {
+    return this.connection.domContentLoaded;
+  }
+  setDOMContentLoaded(loaded) {
+    this.connection.domContentLoaded = loaded;
+  }
+
+  getReconnectInterval() {
+    return this.connection.reconnectInterval;
+  }
+  setReconnectInterval(interval) {
+    this.connection.reconnectInterval = interval;
+  }
+
+  // UI state management
+  isResizing() {
+    return this.ui.isResizing;
+  }
+  setResizing(resizing) {
+    this.ui.isResizing = resizing;
   }
 }
 
+// Initialize state manager
+const appState = new AppStateManager();
+
+// WebSocket connection management
 function connectWS() {
-  ws = new WebSocket(`ws://${location.host}/ws`);
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+  appState.setWebSocket(ws);
+
   ws.onopen = () => {
     onWebsocketOpen();
+    const reconnectInterval = appState.getReconnectInterval();
     if (reconnectInterval) {
       clearInterval(reconnectInterval);
-      reconnectInterval = null;
+      appState.setReconnectInterval(null);
     }
   };
+
   ws.onclose = () => {
     renderStatus("Reconnecting...", "orange");
-    if (!reconnectInterval) {
-      reconnectInterval = setInterval(() => {
+    if (!appState.getReconnectInterval()) {
+      const interval = setInterval(() => {
         renderStatus("Reconnecting...", "orange");
         connectWS();
       }, 1000);
+      appState.setReconnectInterval(interval);
     }
   };
+
   ws.onerror = () => renderStatus("Error", "red");
   ws.onmessage = (e) => handleWSMessage(JSON.parse(e.data));
 }
@@ -145,39 +302,47 @@ function connectWS() {
 function handleWSMessage(msg) {
   switch (msg.type) {
     case "update_index":
-      Object.assign(index, msg.payload);
+      Object.assign(appState.getIndex(), msg.payload);
       renderFilters();
       break;
     case "drop_index":
+      const index = appState.getIndex();
       for (const k of msg.payload) delete index[k];
       renderFilters();
       break;
     case "set_logs":
-      logs = msg.payload.logs;
+      appState.setLogs(msg.payload.logs);
       renderLogs();
-      index = msg.payload.indexCounts;
+      appState.setIndex(msg.payload.indexCounts);
       renderFilters();
       renderStatus();
       break;
     case "add_logs":
+      const logs = appState.getLogs();
       logs.push(...msg.payload);
-      if (logs.length > 1000) logs = logs.slice(-1000);
+      if (logs.length > 1000) {
+        appState.setLogs(logs.slice(-1000));
+      }
       renderLogs();
       renderStatus();
       break;
     case "set_status":
-      serverStatus = msg.payload;
+      appState.setServerStatus(msg.payload);
       renderStatus();
       break;
   }
 }
 
 function sendSearchRequest() {
-  const payload = { filters: { ...filters } };
+  const payload = { filters: { ...appState.getFilters() } };
+  const searchTerm = appState.getSearchTerm();
+
   if (searchTerm.trim()) {
     payload.searchTerm = searchTerm.trim();
   }
-  payload.regexp = regexpEnabled;
+  payload.regexp = appState.getRegexpEnabled();
+
+  const ws = appState.getWebSocket();
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: "set_search", payload: payload }));
   } else {
@@ -189,6 +354,9 @@ function renderStatus(text, color) {
   text ||= "Connected";
   color ||= "green";
   let statusText = text;
+  const serverStatus = appState.getServerStatus();
+  const logs = appState.getLogs();
+
   if (serverStatus && text === "Connected") {
     const memoryMB = Math.round(serverStatus.allocatedMemory / 1024 / 1024);
     statusText = `Connected | ${logs.length}/${serverStatus.logsStored} logs | ${memoryMB} MB`;
@@ -199,6 +367,11 @@ function renderStatus(text, color) {
 
 function renderFilters() {
   filterContent.innerHTML = "";
+
+  const index = appState.getIndex();
+  const filterSearchTerm = appState.getFilterSearchTerm();
+  const stickyFilters = appState.getStickyFilters();
+  const filters = appState.getFilters();
 
   // Filter the index keys based on filterSearchTerm
   const filteredKeys = Object.keys(index).filter((key) => {
@@ -264,80 +437,65 @@ function renderFilters() {
 }
 
 function toggleFilter(btn, key, val) {
-  if (!filters[key]) filters[key] = [];
-  const idx = filters[key].indexOf(val);
-  if (idx === -1) {
+  const isActive = btn.classList.contains("active");
+  if (!isActive) {
     btn.classList.add("active");
-    filters[key].push(val);
+    appState.updateFilters(key, val, true);
   } else {
     btn.classList.remove("active");
-    filters[key].splice(idx, 1);
+    appState.updateFilters(key, val, false);
   }
-  if (filters[key].length === 0) delete filters[key];
-  updateURL();
   sendSearchRequest();
 }
 
 function toggleSticky(key) {
-  if (stickyFilters.has(key)) {
-    stickyFilters.delete(key);
-  } else {
-    stickyFilters.add(key);
-  }
-  updateURL();
+  appState.toggleStickyFilter(key);
   renderFilters();
 }
 
 function setupSearch() {
   let searchTimeout;
   searchInput.addEventListener("input", (e) => {
-    searchTerm = e.target.value;
-    updateClearButton(searchTerm, searchClear);
+    appState.setSearchTerm(e.target.value);
+    updateClearButton(appState.getSearchTerm(), searchClear);
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
-      updateURL();
       sendSearchRequest();
     }, 300); // Debounce search requests
   });
 
   // Regexp checkbox functionality
   regexpCheckbox.addEventListener("change", (e) => {
-    regexpEnabled = e.target.checked;
-    updateURL();
+    appState.setRegexpEnabled(e.target.checked);
     sendSearchRequest();
   });
 
   // Clear button functionality
   setupClearButton(searchInput, searchClear, () => {
-    searchTerm = "";
+    appState.setSearchTerm("");
+    appState.setRegexpEnabled(false);
     regexpCheckbox.checked = false;
-    regexpEnabled = false;
-    updateURL();
     sendSearchRequest();
   });
 }
 
 function resetAllFilters() {
-  filters = {};
-  // Don't reset sticky filters, only clear the active selections
-  updateURL();
+  appState.resetFilters();
   sendSearchRequest();
   renderFilters();
 }
 
 function setupFilterSearch() {
   filterSearchInput.addEventListener("input", (e) => {
-    filterSearchTerm = e.target.value;
-    updateClearButton(filterSearchTerm, filterSearchClear);
+    appState.setFilterSearchTerm(e.target.value);
+    updateClearButton(appState.getFilterSearchTerm(), filterSearchClear);
     renderFilters();
-    updateURL(true);
   });
 
   // Clear button functionality for filter search
   setupClearButton(filterSearchInput, filterSearchClear, () => {
-    filterSearchTerm = "";
+    appState.setFilterSearchTerm("");
     renderFilters();
-    updateURL(true);
   });
 }
 
@@ -355,6 +513,9 @@ function setupFullscreen() {
 }
 
 function renderLogs() {
+  const logs = appState.getLogs();
+  const searchTerm = appState.getSearchTerm();
+
   // Check if user is at the bottom before rendering
   const isAtBottom =
     logPanel.scrollTop + logPanel.clientHeight >= logPanel.scrollHeight - 10;
@@ -388,7 +549,7 @@ function renderLogs() {
     // Format message if present
     let message = "";
     if (log.message) {
-      message = `<div class="message">${escapeHtmlAndHighlightSearchTerm(log.message)}</div>`;
+      message = `<div class="message">${escapeHtmlAndHighlightSearchTerm(log.message, searchTerm)}</div>`;
     }
 
     // Format other properties
@@ -405,7 +566,7 @@ function renderLogs() {
         .map((key) => {
           const value = log[key];
           const valueClass = getValueClass(value);
-          const formattedValue = formatValue(value);
+          const formattedValue = formatValue(value, searchTerm);
           return `<tr>
             <th class="property-name ${valueClass}">${escapeHtml(key)}</th>
             <td class="property-value ${valueClass}">${formattedValue}</td>
@@ -455,19 +616,18 @@ function getValueClass(value) {
   return "";
 }
 
-function formatValue(value) {
+function formatValue(value, searchTerm) {
   if (value === null || value === undefined) return "null";
   if (typeof value === "object") {
-    return syntaxHighlightJson(value);
+    return syntaxHighlightJson(value, searchTerm);
   }
 
   let stringValue = value.toString();
-
-  return escapeHtmlAndHighlightSearchTerm(stringValue);
+  return escapeHtmlAndHighlightSearchTerm(stringValue, searchTerm);
 }
 
-function escapeHtmlAndHighlightSearchTerm(stringValue) {
-  stringValue = highlightSearchTerm(stringValue);
+function escapeHtmlAndHighlightSearchTerm(stringValue, searchTerm) {
+  stringValue = highlightSearchTerm(stringValue, searchTerm);
 
   // Escape HTML but preserve our highlight spans
   return stringValue
@@ -477,8 +637,8 @@ function escapeHtmlAndHighlightSearchTerm(stringValue) {
     .replace(/&lt;\/span&gt;/g, "</span>");
 }
 
-function syntaxHighlightJson(json) {
-  json = JSON.stringify(json, null, 4); // Pretty-print with 2-space indent
+function syntaxHighlightJson(json, searchTerm) {
+  json = JSON.stringify(json, null, 4); // Pretty-print with 4-space indent
 
   json = json
     .replace(/&/g, "&amp;")
@@ -496,12 +656,12 @@ function syntaxHighlightJson(json) {
       } else if (/null/.test(match)) {
         className = "null";
       }
-      return `<span class="${className}">${highlightSearchTerm(match)}</span>`;
+      return `<span class="${className}">${highlightSearchTerm(match, searchTerm)}</span>`;
     },
   );
 }
 
-function highlightSearchTerm(stringValue) {
+function highlightSearchTerm(stringValue, searchTerm) {
   if (searchTerm && searchTerm.trim()) {
     const searchRegex = new RegExp(`(${escapeRegex(searchTerm.trim())})`, "gi");
     stringValue = stringValue.replace(
@@ -528,12 +688,12 @@ function setupResetFilters() {
 
 function setupResizer() {
   resizer.addEventListener("mousedown", (e) => {
-    isResizing = true;
+    appState.setResizing(true);
     e.preventDefault();
   });
 
   document.addEventListener("mousemove", (e) => {
-    if (!isResizing) return;
+    if (!appState.isResizing()) return;
 
     const newWidth = e.clientX - filterPanel.offsetLeft;
     const minWidth = 228;
@@ -545,7 +705,7 @@ function setupResizer() {
   });
 
   document.addEventListener("mouseup", () => {
-    isResizing = false;
+    appState.setResizing(false);
   });
 }
 
@@ -584,22 +744,22 @@ function setupClearButton(inputElement, clearButton, onClear) {
 
 // Handle browser navigation
 window.addEventListener("popstate", () => {
-  loadStateFromURL();
+  appState.loadStateFromURL();
   renderFilters();
   sendSearchRequest();
 });
 
 // Initialize
 document.addEventListener("DOMContentLoaded", () => {
-  domContentLoaded = true;
-  if (wsOpen) {
+  appState.setDOMContentLoaded(true);
+  if (appState.isWebSocketOpen()) {
     initApplication();
   }
 });
 
 function onWebsocketOpen() {
-  wsOpen = true;
-  if (domContentLoaded) {
+  appState.setWebSocketOpen(true);
+  if (appState.isDOMContentLoaded()) {
     initApplication();
   }
   renderStatus();
@@ -607,11 +767,12 @@ function onWebsocketOpen() {
 }
 
 function initApplication() {
-  loadStateFromURL();
+  appState.loadStateFromURL();
   renderStatus();
   sendSearchRequest();
 }
 
+// Initialize everything
 connectWS();
 setupSearch();
 setupFilterSearch();
@@ -619,5 +780,5 @@ setupResetFilters();
 setupFullscreen();
 setupResizer();
 setupExpandJson();
-updateClearButton(searchTerm, searchClear);
-updateClearButton(filterSearchTerm, filterSearchClear);
+updateClearButton(appState.getSearchTerm(), searchClear);
+updateClearButton(appState.getFilterSearchTerm(), filterSearchClear);
