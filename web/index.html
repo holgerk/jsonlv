@@ -20,9 +20,17 @@
                     <input
                         type="text"
                         id="search-input"
+                        data-testid="search-logs-input"
                         placeholder="Search logs..."
                     />
-                    <button id="search-clear" class="clear-btn" title="Clear search">×</button>
+                    <button
+                        id="search-clear"
+                        class="clear-btn"
+                        data-testid="search-logs-input-reset-button"
+                        title="Clear search"
+                    >
+                        ×
+                    </button>
                 </div>
                 <label id="regexp-label">
                     <input type="checkbox" id="regexp-checkbox" />
@@ -50,7 +58,11 @@
                             ×
                         </button>
                     </div>
-                    <button id="reset-filters" title="Reset all filters">
+                    <button
+                        id="reset-filters"
+                        data-testid="reset-filter-btn"
+                        title="Reset all filters"
+                    >
                         Reset
                     </button>
                 </div>

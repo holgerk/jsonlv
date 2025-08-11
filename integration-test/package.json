@@ -1,0 +1,15 @@
+{
+  "name": "turbo-tail-integration-tests",
+  "version": "1.0.0",
+  "description": "Integration tests for turbo-tail using Playwright",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "install-browsers": "playwright install"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.45.0"
+  }
+}

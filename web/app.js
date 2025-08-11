@@ -421,6 +421,7 @@ function renderFilters() {
     for (const val in values) {
       const btn = document.createElement("button");
       btn.textContent = `${val} (${values[val]})`;
+      btn.dataset["testid"] = `filter-btn:${key}:${val}`;
       btn.className = "filter-btn";
       if (values[val] == 0) {
         btn.className = "filter-btn filter-zero-matches";
