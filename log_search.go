@@ -82,16 +82,21 @@ func (ls *LogSearch) logMatchesSearch(raw JsonObject, searchTerm string, useRege
 func stringSearch(searchTerm string, flat FlatJsonObject) bool {
 	searchTerm = strings.ToLower(searchTerm)
 	searchTermChunks := splitOnWhitespace(searchTerm)
-	matches := 0
 	for _, searchTermChunk := range searchTermChunks {
+		found := false
 		for _, propValue := range flat {
 			if strings.Contains(strings.ToLower(propValue), searchTermChunk) {
-				matches++
+				found = true
 				break
 			}
 		}
+		if !found {
+			return false
+		}
+		
+		
 	}
-	return len(searchTermChunks) == matches
+	return true
 }
 
 func splitOnWhitespace(s string) []string {
