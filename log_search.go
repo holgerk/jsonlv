@@ -12,6 +12,13 @@ type SearchPayload struct {
 	Regexp     bool          `json:"regexp"`
 }
 
+// Matches any Unicode whitespace:
+// \p{Zs} -> space separators
+// \p{Zl} -> line separator
+// \p{Zp} -> paragraph separator
+// \t\n\f\r -> ASCII whitespace controls
+var unicodeWhitespace = regexp.MustCompile(`[\p{Zs}\p{Zl}\p{Zp}\t\n\f\r]+`)
+
 type LogSearch struct{}
 
 func (ls *LogSearch) FilterLogs(logs []JsonObject, payload SearchPayload) []JsonObject {
@@ -58,13 +65,7 @@ func (ls *LogSearch) logMatchesSearch(raw JsonObject, searchTerm string, useRege
 		re, err := regexp.Compile("(?i)" + searchTerm)
 		if err != nil {
 			// If regexp is invalid, fall back to string search
-			searchTerm = strings.ToLower(searchTerm)
-			for _, propValue := range flat {
-				if strings.Contains(strings.ToLower(propValue), searchTerm) {
-					return true
-				}
-			}
-			return false
+			return stringSearch(searchTerm, flat)
 		}
 		for _, propValue := range flat {
 			if re.MatchString(propValue) {
@@ -74,12 +75,33 @@ func (ls *LogSearch) logMatchesSearch(raw JsonObject, searchTerm string, useRege
 		return false
 	} else {
 		// Regular string search
-		searchTerm = strings.ToLower(searchTerm)
+		return stringSearch(searchTerm, flat)
+	}
+}
+
+func stringSearch(searchTerm string, flat FlatJsonObject) bool {
+	searchTerm = strings.ToLower(searchTerm)
+	searchTermChunks := splitOnWhitespace(searchTerm)
+	matches := 0
+	for _, searchTermChunk := range searchTermChunks {
 		for _, propValue := range flat {
-			if strings.Contains(strings.ToLower(propValue), searchTerm) {
-				return true
+			if strings.Contains(strings.ToLower(propValue), searchTermChunk) {
+				matches++
+				break
 			}
 		}
-		return false
 	}
+	return len(searchTermChunks) == matches
+}
+
+func splitOnWhitespace(s string) []string {
+	parts := unicodeWhitespace.Split(s, -1)
+	// Remove any empty strings
+	result := parts[:0] // reuse the same slice
+	for _, p := range parts {
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
 }

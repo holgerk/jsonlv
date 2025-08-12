@@ -126,6 +126,13 @@ func TestLogMatchesSearch(t *testing.T) {
 			regexp:     true,
 			expected:   true,
 		},
+		{
+			name:       "multiword search",
+			log:        JsonObject{"message": "word1 word2 word3"},
+			searchTerm: "word1 word3",
+			regexp:     false,
+			expected:   true,
+		},
 	}
 
 	for _, tt := range tests {
