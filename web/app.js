@@ -544,7 +544,7 @@ function renderLogs() {
     let levelDisplay = "";
     if (log.level || log.level_name) {
       const levelValue = log.level_name || log.level;
-      levelDisplay = `<span class="level">${levelValue}</span>`;
+      levelDisplay = `<span class="level">${escapeHtmlAndHighlightSearchTerm(levelValue, searchTerm)}</span>`;
     }
 
     // Format message if present
@@ -569,7 +569,7 @@ function renderLogs() {
           const valueClass = getValueClass(value);
           const formattedValue = formatValue(value, searchTerm);
           return `<tr>
-            <th class="property-name ${valueClass}">${escapeHtml(key)}</th>
+            <th class="property-name ${valueClass}">${escapeHtmlAndHighlightSearchTerm(key, searchTerm)}</th>
             <td class="property-value ${valueClass}">${formattedValue}</td>
           </tr>`;
         })
@@ -682,12 +682,6 @@ function highlightSearchTerm(stringValue, searchTerm) {
 
 function escapeRegex(string) {
   return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function escapeHtml(text) {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
 }
 
 function setupResetFilters() {
