@@ -67,8 +67,8 @@ func (ls *LogSearch) logMatchesSearch(raw JsonObject, searchTerm string, useRege
 			// If regexp is invalid, fall back to string search
 			return stringSearch(searchTerm, flat)
 		}
-		for _, propValue := range flat {
-			if re.MatchString(propValue) {
+		for key, propValue := range flat {
+			if re.MatchString(key) || re.MatchString(propValue) {
 				return true
 			}
 		}
@@ -84,8 +84,10 @@ func stringSearch(searchTerm string, flat FlatJsonObject) bool {
 	searchTermChunks := splitOnWhitespace(searchTerm)
 	for _, searchTermChunk := range searchTermChunks {
 		found := false
-		for _, propValue := range flat {
-			if strings.Contains(strings.ToLower(propValue), searchTermChunk) {
+		for key, propValue := range flat {
+			keyMatch := strings.Contains(strings.ToLower(key), searchTermChunk)
+			valueMatch := strings.Contains(strings.ToLower(propValue), searchTermChunk)
+			if keyMatch || valueMatch {
 				found = true
 				break
 			}

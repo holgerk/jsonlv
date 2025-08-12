@@ -133,6 +133,13 @@ func TestLogMatchesSearch(t *testing.T) {
 			regexp:     false,
 			expected:   true,
 		},
+		{
+			name:       "key search",
+			log:        JsonObject{"message": "test"},
+			searchTerm: "message",
+			regexp:     false,
+			expected:   true,
+		},
 	}
 
 	for _, tt := range tests {
