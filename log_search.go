@@ -95,8 +95,6 @@ func stringSearch(searchTerm string, flat FlatJsonObject) bool {
 		if !found {
 			return false
 		}
-		
-		
 	}
 	return true
 }
