@@ -664,7 +664,14 @@ function syntaxHighlightJson(json, searchTerm) {
 
 function highlightSearchTerm(stringValue, searchTerm) {
   if (searchTerm && searchTerm.trim()) {
-    const searchRegex = new RegExp(`(${escapeRegex(searchTerm.trim())})`, "gi");
+    let regexp;
+    if (appState.getRegexpEnabled()) {
+      regexp = searchTerm;
+    } else {
+      regexp = escapeRegex(searchTerm.trim());
+      regexp = regexp.split(/\s+/).join("|");
+    }
+    const searchRegex = new RegExp(`(${regexp})`, "gi");
     stringValue = stringValue.replace(
       searchRegex,
       '<span class="highlight">$1</span>',
