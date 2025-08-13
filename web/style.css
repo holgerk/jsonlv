@@ -152,8 +152,6 @@ body {
     gap: 8px;
 }
 
-
-
 #filter-search-input {
     background: #fdf6e3;
     border: 1px solid #93a1a1;
@@ -175,8 +173,6 @@ body {
 #filter-search-input::placeholder {
     color: #93a1a1;
 }
-
-
 
 #reset-filters {
     background: #eee8d5;
@@ -461,4 +457,18 @@ pre .log-level-warn {
 .highlight {
     background: yellow;
     color: black;
+}
+
+@keyframes flashHighlight {
+    0% {
+        background-color: yellow;
+    }
+    100% {
+        background-color: #eee8d5;
+    }
+}
+
+/* New log highlighting/flashing animation */
+.log-entry.new {
+    animation: flashHighlight 0.5s ease-out;
 }

@@ -246,6 +246,12 @@ func (lm *LogManager) increaseClientIndexCounts(indexCounts IndexCounts, _ Searc
 	}
 }
 
+func (lm *LogManager) removeBlacklistedProperties(indexCounts IndexCounts) {
+	for propName := range lm.blacklist {
+		delete(indexCounts, propName)
+	}
+}
+
 func (lm *LogManager) omitIndexValue(propName string, propValue string) bool {
 	if propValue == "" {
 		return true // omit empty values

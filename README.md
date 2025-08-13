@@ -389,9 +389,21 @@ The following filter boxes appear:
 
 ---
 
+## ✨ New Log Highlighting
+
+**Feature:** New logs are visually highlighted when they arrive to make them immediately noticeable.
+
+- **Performance:** Uses CSS animations for smooth performance
+
+**How it works:**
+1. When new logs arrive via WebSocket (`add_logs` message), they are tagged as "new"
+2. New logs render with the `.new` CSS class that triggers the flash animation
+3. After a delay, the class and styling are automatically removed
+
+---
+
 # Todos
 
 - wildcard search
 - reduce memory consumption
 - persist ui settings (filter, search, resizer positon) in url
-- hightlight/flash new logs

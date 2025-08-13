@@ -139,6 +139,7 @@ func sendBufferedLogs(logManager *LogManager) {
 				sendUpdateIndexMessage(client, logManager.GetIndexCounts())
 			} else {
 				logManager.increaseClientIndexCounts(client.indexCounts, client.searchPayload.Filters, result.Logs)
+				logManager.removeBlacklistedProperties(client.indexCounts)
 				sendUpdateIndexMessage(client, client.indexCounts)
 			}
 		}
@@ -227,7 +228,6 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	wsClientsMu.Lock()
 	wsClients[conn] = client
 	wsClientsMu.Unlock()
-
 
 	wsSend(client, getStatusMessage())
 

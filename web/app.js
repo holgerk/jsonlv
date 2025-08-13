@@ -307,23 +307,26 @@ function handleWSMessage(msg) {
       break;
     case "drop_index":
       const index = appState.getIndex();
-      for (const k of msg.payload) delete index[k];
+      for (const k of msg.payload) {
+        delete index[k];
+      }
       renderFilters();
       break;
     case "set_logs":
       appState.setLogs(msg.payload.logs);
-      renderLogs();
+      renderLogs(); // No new logs count needed for initial set
       appState.setIndex(msg.payload.indexCounts);
       renderFilters();
       renderStatus();
       break;
     case "add_logs":
       const logs = appState.getLogs();
+      const newLogsCount = msg.payload.length;
       logs.push(...msg.payload);
       if (logs.length > 1000) {
         appState.setLogs(logs.slice(-1000));
       }
-      renderLogs();
+      renderLogs(newLogsCount);
       renderStatus();
       break;
     case "set_status":
@@ -513,7 +516,7 @@ function setupFullscreen() {
   });
 }
 
-function renderLogs() {
+function renderLogs(newLogsCount = 0) {
   const logs = appState.getLogs();
   const searchTerm = appState.getSearchTerm();
 
@@ -523,7 +526,8 @@ function renderLogs() {
 
   logPanel.innerHTML = "";
 
-  logs.forEach((log) => {
+  logs.forEach((log, index) => {
+    const isNewLog = newLogsCount > 0 && index >= logs.length - newLogsCount;
     const entry = document.createElement("div");
     entry.className = "log-entry";
 
@@ -531,6 +535,15 @@ function renderLogs() {
     const level = getLogLevel(log);
     if (level) {
       entry.classList.add(level.toLowerCase());
+    }
+
+    // Add 'new' class for highlighting new logs
+    if (isNewLog) {
+      entry.classList.add("new");
+      // Remove the 'new' class after animation completes
+      setTimeout(() => {
+        entry.classList.remove("new");
+      }, 500); // Match animation duration
     }
 
     // Format timestamp if present
