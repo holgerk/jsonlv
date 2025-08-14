@@ -64,6 +64,7 @@ func main() {
 	devMode := flag.Bool("dev", false, "Serve web files from filesystem (for development)")
 	maxIndexValueLengthFlag := flag.Int("maxIndexValueLength", 50, "Maximum length of values to index (omit longer values)")
 	maxLogsFlag := flag.Int("maxLogs", 10000, "Maximum number of logs to store in memory")
+	portFlag := flag.String("port", "8181", "Port to listen on for web server")
 	flag.Parse()
 
 	// Initialize LogManager
@@ -87,8 +88,8 @@ func main() {
 	}
 	http.HandleFunc("/ws", wsHandler)
 	go func() {
-		log.Println("Web server listening on :8181")
-		if err := http.ListenAndServe(":8181", nil); err != nil {
+		log.Printf("Web server listening on :%s", *portFlag)
+		if err := http.ListenAndServe(":"+*portFlag, nil); err != nil {
 			log.Fatalf("Web server error: %v", err)
 		}
 	}()

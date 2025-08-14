@@ -30,6 +30,24 @@ For more options, run:
 ```
 
 
+## 🛠️ Command Line Options
+
+`jsonlv` supports the following command-line flags:
+
+- `--dev`: Enable development mode. When set, the web server serves files from the local `web/` directory instead of the embedded `web/` directory (useful for frontend development).
+
+- `--maxIndexValueLength`: Set the maximum length of values to index (default: 50). Values longer than this limit are omitted from indexing to prevent performance degradation.
+
+- `--maxLogs`: Set the maximum number of logs to store in memory (default: 10000). When exceeded, oldest logs are dropped to maintain memory efficiency.
+
+- `--port`: Set the port for the web server (default: 8181). Use this to run multiple instances or avoid port conflicts.
+
+Example usage:
+```bash
+tail -f -n 10000 your_logs.json | ./jsonlv --dev --maxIndexValueLength=100 --maxLogs=5000 --port=8080
+```
+
+
 ---
 
 ## 📦 General Overview
