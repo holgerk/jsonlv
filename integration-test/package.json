@@ -1,7 +1,7 @@
 {
-  "name": "turbo-tail-integration-tests",
+  "name": "jsonlv-integration-tests",
   "version": "1.0.0",
-  "description": "Integration tests for turbo-tail using Playwright",
+  "description": "Integration tests for jsonlv using Playwright",
   "type": "module",
   "scripts": {
     "test": "playwright test",

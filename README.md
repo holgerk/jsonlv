@@ -1,4 +1,4 @@
-# 🚀 `turbo-tail` Specification
+# 🚀 `jsonlv` Specification
 
 A command-line and web-based real-time log inspection tool written in Go.
 
@@ -6,7 +6,7 @@ A command-line and web-based real-time log inspection tool written in Go.
 
 ## 📦 General Overview
 
-- **Name:** `turbo-tail`
+- **Name:** `jsonlv`
 - **Language:** Go
 - **Purpose:** Realtime JSON log streaming, indexing, filtering, and display via a browser-based interface.
 - **One complete binary**
@@ -233,7 +233,7 @@ A command-line and web-based real-time log inspection tool written in Go.
 
 ### Status View
 
-The status view is part of the top panel in the turbo-tail frontend UI. It provides users with real-time information about the current state of the log streaming and filtering system.
+The status view is part of the top panel in the jsonlv frontend UI. It provides users with real-time information about the current state of the log streaming and filtering system.
 
 - **Location:**
   The status view is located in the top panel of the UI, above the filter and log panels.
@@ -267,7 +267,7 @@ The status view is a compact, always-visible area at the top of the UI that keep
 
 ### Filter View
 
-The filter view is the left panel of the turbo-tail frontend UI. Here’s how it works and what it looks like:
+The filter view is the left panel of the jsonlv frontend UI. Here’s how it works and what it looks like:
 
 - **One filter box per JSON property:**
   For every property found in the incoming JSON logs (including nested properties, which are shown in dot notation like `context.bindings.userId`), a filter box is displayed.
@@ -301,7 +301,7 @@ The filter view is an interactive, real-time panel that lets you quickly narrow 
 
 ### Log View
 
-The log view is the right panel of the turbo-tail frontend UI. It displays the log entries in real time and provides a user-friendly interface for inspecting log data.
+The log view is the right panel of the jsonlv frontend UI. It displays the log entries in real time and provides a user-friendly interface for inspecting log data.
 
 - **Location:**
   The log view occupies the right panel of the UI, next to the filter view.

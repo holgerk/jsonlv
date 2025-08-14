@@ -1,4 +1,4 @@
-module turbo-tail
+module jsonlv
 
 go 1.24.5
 

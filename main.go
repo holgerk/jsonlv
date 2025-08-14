@@ -1,4 +1,4 @@
-// turbo-tail: see README.md for full specification
+// jsonlv: see README.md for full specification
 package main
 
 import (
