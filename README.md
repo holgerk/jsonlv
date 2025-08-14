@@ -2,6 +2,34 @@
 
 A command-line and web-based real-time log inspection tool written in Go.
 
+## 📥 Install Instructions
+
+To install `jsonlv`, you need Go 1.24 or later.
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/holgerk/jsonlv.git
+   cd jsonlv
+   ```
+
+2. Build the binary:
+   ```bash
+   go build -o jsonlv
+   ```
+
+3. Run the binary:
+   ```bash
+   tail -f -n 10000 <your-log-files> | ./jsonlv
+   ```
+
+The server will start on port 8181. Open [http://localhost:8181](http://localhost:8181) in your browser to view the logs.
+
+For more options, run:
+```bash
+./jsonlv --help
+```
+
+
 ---
 
 ## 📦 General Overview
@@ -87,7 +115,7 @@ A command-line and web-based real-time log inspection tool written in Go.
 
 ## 🌐 Web Server
 
-- **Port:** `8080`
+- **Port:** `8181`
 - **Routes:**
   - `/`: Serves static HTML/JS/CSS frontend.
   - `/ws`: WebSocket endpoint for live updates.
