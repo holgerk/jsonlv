@@ -26,6 +26,9 @@ jobs:
           cd integration-test
           npm ci
 
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
+
       - name: Run integration tests
         run: |
           cd integration-test
