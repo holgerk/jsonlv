@@ -32,10 +32,3 @@ jobs:
         cd jsonlv/integration-test
         npm run test
 
-    - name: Upload test results
-      if: failure()
-      uses: actions/upload-artifact@v3
-      with:
-        name: test-results
-        path: jsonlv/integration-test/test-results/
-        retention-days: 30
