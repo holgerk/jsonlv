@@ -37,7 +37,7 @@ test.describe("Turbo-tail Live Log Streaming", () => {
   });
 
   test.afterEach(async () => {
-    turboTailProcess.kill();
+    turboTailProcess.kill("SIGKILL");
     await sleep(500);
   });
 
