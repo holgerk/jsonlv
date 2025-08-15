@@ -38,7 +38,7 @@ test.describe("Turbo-tail Live Log Streaming", () => {
 
   test.afterEach(async () => {
     turboTailProcess.kill();
-    await sleep(50);
+    await sleep(500);
   });
 
   test("should filter and search logs", async () => {
