@@ -26,7 +26,7 @@ test.describe("Turbo-tail Live Log Streaming", () => {
   test.beforeEach(async () => {
     turboTailProcess = spawn("go", ["run", "."], {
       cwd: path.join(__dirname, "../.."),
-      stdio: ["pipe", "ignore", "ignore"],
+      stdio: ["pipe", "ignore", "inherit"],
     });
     turboTailProcess.on("close", (code) => {
       if (code) {
