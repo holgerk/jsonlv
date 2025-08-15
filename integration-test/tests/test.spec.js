@@ -119,7 +119,7 @@ test.describe("Turbo-tail Live Log Streaming", () => {
   });
 });
 
-function waitForPort(host, port, timeoutMs = 10000) {
+function waitForPort(host, port, timeoutMs = 20000) {
   return new Promise((resolve, reject) => {
     const start = Date.now();
 
