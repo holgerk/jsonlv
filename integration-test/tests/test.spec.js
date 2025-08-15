@@ -11,8 +11,6 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 test.describe("Turbo-tail Live Log Streaming", () => {
   let turboTailProcess;
   let page;
-  let startPort = 8181;
-  let port;
 
   test.beforeAll(async ({ browser }) => {
     const context = await browser.newContext();
@@ -26,9 +24,7 @@ test.describe("Turbo-tail Live Log Streaming", () => {
   });
 
   test.beforeEach(async () => {
-    port = startPort;
-    startPort++;
-    turboTailProcess = spawn("go", ["run", ".", "--port", port], {
+    turboTailProcess = spawn("go", ["run", "."], {
       cwd: path.join(__dirname, "../.."),
       stdio: ["pipe", "ignore", "inherit"],
     });
@@ -37,15 +33,16 @@ test.describe("Turbo-tail Live Log Streaming", () => {
         throw new Error(`process exited with code ${code}`);
       }
     });
-    await waitForPort("localhost", port);
+    await waitForPort("localhost", 8181);
   });
 
   test.afterEach(async () => {
     turboTailProcess.kill("SIGKILL");
+    await sleep(500);
   });
 
   test("should filter and search logs", async () => {
-    await page.goto("http://localhost:" + port);
+    await page.goto("http://localhost:8181");
     await page.waitForSelector("#log-panel");
 
     const initialLogs = [
@@ -100,7 +97,7 @@ test.describe("Turbo-tail Live Log Streaming", () => {
   });
 
   test("should render thousands of logs", async () => {
-    await page.goto("http://localhost:" + port);
+    await page.goto("http://localhost:8181");
     await page.waitForSelector("#log-panel");
 
     const logEntries = page.locator("#log-panel .log-entry");
