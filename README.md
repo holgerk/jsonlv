@@ -1,4 +1,7 @@
-# 🚀 `jsonlv` Specification
+# 🚀 `jsonlv` JSON Log Viewer Specification
+
+[![Test Status](https://github.com/holgerk/jsonlv/actions/workflows/go.yml/badge.svg)](https://github.com/holgerk/jsonlv/actions/workflows/go.yml)
+[![Test Status](https://github.com/holgerk/jsonlv/actions/workflows/integration-test.yml/badge.svg)](https://github.com/holgerk/jsonlv/actions/workflows/integration-test.yml)
 
 A command-line and web-based real-time log inspection tool written in Go.
 
