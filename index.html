@@ -992,6 +992,7 @@
         list.querySelectorAll('.entry').forEach(function(e) {
           e.classList.toggle('hidden', activeFilter !== 'ALL' && e.dataset.level !== activeFilter);
         });
+        if (autoScroll) list.scrollTop = list.scrollHeight;
       });
     });
 
