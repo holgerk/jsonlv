@@ -52,6 +52,89 @@ void setupAppIcon() {
     [[NSApplication sharedApplication] setApplicationIconImage:icon];
 }
 
+// Declarations of Go-exported callbacks (defined in filecb_darwin.go).
+extern void cMenuOpenFiles(void);
+extern void cOpenFile(const char *path);
+extern void cClearRecent(void);
+
+// ── File menu handler ─────────────────────────────────────────────────────────
+
+@interface JSONLVMenuHandler : NSObject
+@property (nonatomic, copy) NSString *filePath;
+@end
+@implementation JSONLVMenuHandler
+- (void)doOpen:(id)sender     { cMenuOpenFiles(); }
+- (void)doOpenFile:(id)sender { cOpenFile([self.filePath UTF8String]); }
+- (void)doClear:(id)sender    { cClearRecent(); }
+@end
+
+static JSONLVMenuHandler *gMenuHandler = nil;
+static NSMenu            *gRecentMenu  = nil;
+
+void rebuildRecentMenuC(const char *recentNL) {
+    [gRecentMenu removeAllItems];
+    NSString *joined = recentNL ? [NSString stringWithUTF8String:recentNL] : @"";
+    NSArray<NSString*> *paths = joined.length > 0
+        ? [joined componentsSeparatedByString:@"\n"] : @[];
+    for (NSString *p in paths) {
+        if (!p.length) continue;
+        JSONLVMenuHandler *h = [JSONLVMenuHandler new];
+        h.filePath = p;
+        NSMenuItem *item = [[NSMenuItem alloc]
+            initWithTitle:p.lastPathComponent
+                   action:@selector(doOpenFile:)
+            keyEquivalent:@""];
+        item.target  = h;
+        item.toolTip = p;
+        [gRecentMenu addItem:item];
+    }
+    if (paths.count > 0) [gRecentMenu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem *clear = [[NSMenuItem alloc]
+        initWithTitle:@"Liste leeren" action:@selector(doClear:) keyEquivalent:@""];
+    clear.target = gMenuHandler;
+    [gRecentMenu addItem:clear];
+}
+
+void setupFileMenu(const char *recentNL) {
+    gMenuHandler = [JSONLVMenuHandler new];
+
+    NSMenuItem *fileItem = [NSMenuItem new];
+    [[NSApp mainMenu] insertItem:fileItem atIndex:1];
+    NSMenu *fileMenu = [[NSMenu alloc] initWithTitle:@"Datei"];
+    [fileItem setSubmenu:fileMenu];
+
+    NSMenuItem *openItem = [[NSMenuItem alloc]
+        initWithTitle:@"Öffnen…" action:@selector(doOpen:) keyEquivalent:@"o"];
+    openItem.target = gMenuHandler;
+    [fileMenu addItem:openItem];
+
+    [fileMenu addItem:[NSMenuItem separatorItem]];
+
+    NSMenuItem *recentItem = [[NSMenuItem alloc]
+        initWithTitle:@"Zuletzt geöffnet" action:nil keyEquivalent:@""];
+    [fileMenu addItem:recentItem];
+    gRecentMenu = [[NSMenu alloc] initWithTitle:@"Zuletzt geöffnet"];
+    [recentItem setSubmenu:gRecentMenu];
+
+    rebuildRecentMenuC(recentNL);
+}
+
+// ── File pickers ──────────────────────────────────────────────────────────────
+
+char* openMultipleFilesPicker(void) {
+    NSOpenPanel *panel = [NSOpenPanel openPanel];
+    panel.canChooseFiles          = YES;
+    panel.canChooseDirectories    = NO;
+    panel.allowsMultipleSelection = YES;
+    panel.title = @"Log-Dateien öffnen";
+    if ([panel runModal] == NSModalResponseOK) {
+        NSMutableArray<NSString*> *paths = [NSMutableArray array];
+        for (NSURL *url in panel.URLs) [paths addObject:url.path];
+        return strdup([[paths componentsJoinedByString:@"\n"] UTF8String]);
+    }
+    return NULL;
+}
+
 char* openFilePicker(void) {
     NSOpenPanel *panel = [NSOpenPanel openPanel];
     panel.canChooseFiles        = YES;
@@ -94,7 +177,11 @@ void setupAppMenu() {
 }
 */
 import "C"
-import "unsafe"
+
+import (
+	"strings"
+	"unsafe"
+)
 
 func setupAppMenu() { C.setupAppMenu() }
 func setupAppIcon()  { C.setupAppIcon() }
@@ -106,4 +193,29 @@ func PickLocalFile() string {
 	}
 	defer C.free(unsafe.Pointer(p))
 	return C.GoString(p)
+}
+
+func PickMultipleFiles() []string {
+	p := C.openMultipleFilesPicker()
+	if p == nil {
+		return nil
+	}
+	defer C.free(unsafe.Pointer(p))
+	s := C.GoString(p)
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, "\n")
+}
+
+func SetupFileMenu(recent []string) {
+	cs := C.CString(strings.Join(recent, "\n"))
+	defer C.free(unsafe.Pointer(cs))
+	C.setupFileMenu(cs)
+}
+
+func RebuildRecentMenu(recent []string) {
+	cs := C.CString(strings.Join(recent, "\n"))
+	defer C.free(unsafe.Pointer(cs))
+	C.rebuildRecentMenuC(cs)
 }

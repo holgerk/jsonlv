@@ -77,6 +77,25 @@ func sendMsg(w http.ResponseWriter, flusher http.Flusher, msg logMsg) {
 	flusher.Flush()
 }
 
+var globalBroker *broker
+
+func startTailing(path string) {
+	source := filepath.Base(path)
+	go func() {
+		tail, err := lastNLines(path, 1000)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %s: %v\n", path, err)
+			return
+		}
+		for _, line := range tail {
+			if line != "" {
+				globalBroker.publish(source, line)
+			}
+		}
+		followFile(path, source, globalBroker)
+	}()
+}
+
 func main() {
 	initMappings()
 
@@ -86,6 +105,7 @@ func main() {
 	files := flag.Args()
 
 	b := newBroker()
+	globalBroker = b
 
 	if len(files) == 0 {
 		// Read from stdin
@@ -207,6 +227,34 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "local": local}) //nolint:errcheck
 	})
+
+	SetupFileMenu(loadRecent())
+
+	go func() {
+		for action := range menuFileCh {
+			switch action {
+			case "open":
+				result := make(chan []string, 1)
+				wv.Dispatch(func() { result <- PickMultipleFiles() })
+				paths := <-result
+				if len(paths) == 0 {
+					continue
+				}
+				for _, p := range paths {
+					startTailing(p)
+				}
+				recent := addRecent(paths)
+				wv.Dispatch(func() { RebuildRecentMenu(recent) })
+			case "clear":
+				clearRecent()
+				wv.Dispatch(func() { RebuildRecentMenu(nil) })
+			default:
+				startTailing(action)
+				recent := addRecent([]string{action})
+				wv.Dispatch(func() { RebuildRecentMenu(recent) })
+			}
+		}
+	}()
 
 	wv.SetTitle("Log Viewer")
 	wv.SetSize(1280, 800, webview.HintNone)
