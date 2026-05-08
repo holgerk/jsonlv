@@ -289,6 +289,23 @@
     .prop-key { cursor: pointer; }
     .prop-key:hover { text-decoration: underline dotted; }
 
+    /* ── file path links ── */
+    .file-link { color: var(--svc-color); text-decoration: none; }
+    .file-link:hover { text-decoration: underline; }
+
+    /* ── path-mapping modal ── */
+    #path-modal { position: fixed; inset: 0; z-index: 10000; display: flex; align-items: center; justify-content: center; }
+    #path-modal-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.45); }
+    #path-modal-box { position: relative; background: var(--bg-2); border: 1px solid var(--border); border-radius: 12px; padding: 22px 24px; max-width: 520px; width: 90%; box-shadow: 0 16px 48px rgba(0,0,0,0.4); }
+    #path-modal-box h2 { font-size: 13px; font-weight: 600; color: var(--text-hi); margin-bottom: 8px; }
+    #path-modal-file { font-size: 11px; color: var(--svc-color); background: var(--bg-3); border-radius: 6px; padding: 6px 10px; margin-bottom: 10px; word-break: break-all; }
+    #path-modal-box p { font-size: 11px; color: var(--text-dim); margin-bottom: 16px; line-height: 1.6; }
+    #path-modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .modal-btn { font-family: inherit; font-size: 11px; padding: 5px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-btn); color: var(--text); cursor: pointer; }
+    .modal-btn.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+    .modal-btn:hover:not(:disabled) { opacity: 0.85; }
+    .modal-btn:disabled { opacity: 0.5; cursor: default; }
+
     /* ── context menu ── */
     #ctx-menu {
       position: fixed;
@@ -355,6 +372,19 @@
     <div id="empty">
       <div class="icon">◎</div>
       <p>Waiting for log input…</p>
+    </div>
+  </div>
+
+  <div id="path-modal" class="hidden">
+    <div id="path-modal-overlay"></div>
+    <div id="path-modal-box">
+      <h2>Kein Pfad-Mapping gefunden</h2>
+      <div id="path-modal-file"></div>
+      <p>Diese Datei existiert nicht lokal. Bitte wähle die entsprechende Datei aus — das Mapping wird gespeichert und gilt für alle weiteren Öffnungen automatisch.</p>
+      <div id="path-modal-actions">
+        <button class="modal-btn" id="path-modal-cancel">Abbrechen</button>
+        <button class="modal-btn primary" id="path-modal-pick">Datei auswählen…</button>
+      </div>
     </div>
   </div>
 
@@ -444,6 +474,8 @@
         colsHtml +
         '<span class="msg">'                       + esc(message)    + '</span>' +
         (meta ? '<span class="meta">' + esc(meta) + '</span>' : '');
+      const msgEl = el.querySelector('.msg');
+      if (msgEl) linkifyFilePaths(msgEl);
       rawData.set(el, raw);
       sourceData.set(el, src);
       return el;
@@ -470,6 +502,49 @@
         cur = cur[p];
       }
       return cur;
+    }
+
+    // ── file path linking ─────────────────────────────────────────────────────
+
+    // Matches absolute paths with ≥1 directory component and a file extension,
+    // optionally followed by :line.
+    const FILE_PATH_RE = /(\/(?:[^\s'"<>\]]+\/)+[^\s'"<>\]/]+\.[a-zA-Z0-9]{1,10})(?::(\d+))?/g;
+
+    async function openFile(file, line) {
+      try {
+        const u = '/open?file=' + encodeURIComponent(file) + (line ? '&line=' + encodeURIComponent(line) : '');
+        const res = await fetch(u);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.status === 'not_found') showPathModal(file, line || '');
+      } catch(_) {}
+    }
+
+    function linkifyFilePaths(el) {
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+      const nodes = [];
+      let node;
+      while ((node = walker.nextNode())) nodes.push(node);
+      nodes.forEach(function(tn) {
+        FILE_PATH_RE.lastIndex = 0;
+        const text = tn.textContent;
+        let match, last = 0;
+        const frag = document.createDocumentFragment();
+        while ((match = FILE_PATH_RE.exec(text)) !== null) {
+          if (match.index > last) frag.appendChild(document.createTextNode(text.slice(last, match.index)));
+          const filePath = match[1], lineNum = match[2] || '';
+          const a = document.createElement('a');
+          a.href = '#';
+          a.className = 'file-link';
+          a.textContent = match[0];
+          a.addEventListener('click', function(e) { e.preventDefault(); e.stopPropagation(); openFile(filePath, lineNum); });
+          frag.appendChild(a);
+          last = match.index + match[0].length;
+        }
+        if (last === 0) return;
+        if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+        tn.parentNode.replaceChild(frag, tn);
+      });
     }
 
     function annotateTopLevelKeys(pre) {
@@ -499,7 +574,8 @@
         if (src) obj._source = src;
         pre.innerHTML = syntaxHighlight(obj);
         annotateTopLevelKeys(pre);
-      } catch (_) { pre.textContent = raw; }
+        linkifyFilePaths(pre);
+      } catch (_) { pre.textContent = raw; linkifyFilePaths(pre); }
       panel.appendChild(pre);
       return panel;
     }
@@ -898,6 +974,40 @@
       cntTotal.textContent = cntError.textContent = cntWarn.textContent = 0;
       empty.classList.remove('hidden');
       if (findTerm) closeFind();
+    });
+    // ── path-mapping modal ───────────────────────────────────────────────────
+
+    let pathModalFile = '', pathModalLine = '';
+    const pathModal     = document.getElementById('path-modal');
+    const pathModalFileEl = document.getElementById('path-modal-file');
+
+    function showPathModal(file, line) {
+      pathModalFile = file;
+      pathModalLine = line;
+      pathModalFileEl.textContent = file;
+      pathModal.classList.remove('hidden');
+    }
+
+    document.getElementById('path-modal-overlay').addEventListener('click', function() {
+      pathModal.classList.add('hidden');
+    });
+    document.getElementById('path-modal-cancel').addEventListener('click', function() {
+      pathModal.classList.add('hidden');
+    });
+    document.getElementById('path-modal-pick').addEventListener('click', async function() {
+      const btn = this;
+      btn.disabled = true;
+      btn.textContent = 'Warte…';
+      try {
+        const res = await fetch('/pick-file?remote=' + encodeURIComponent(pathModalFile));
+        if (res.ok) {
+          pathModal.classList.add('hidden');
+          await openFile(pathModalFile, pathModalLine);
+        }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Datei auswählen…';
+      }
     });
   </script>
 </body>

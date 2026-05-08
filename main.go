@@ -8,7 +8,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"time"
@@ -76,6 +78,8 @@ func sendMsg(w http.ResponseWriter, flusher http.Flusher, msg logMsg) {
 }
 
 func main() {
+	initMappings()
+
 	follow := flag.Bool("f", false, "follow file(s) for new lines")
 	lines := flag.Int("n", 1000, "number of lines from end of file")
 	flag.Parse()
@@ -166,6 +170,44 @@ func main() {
 	defer wv.Destroy()
 	setupAppMenu()
 	setupAppIcon()
+
+	mux.HandleFunc("/open", func(w http.ResponseWriter, r *http.Request) {
+		file := r.URL.Query().Get("file")
+		line := r.URL.Query().Get("line")
+		if file == "" {
+			http.Error(w, "missing file", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		local, ok := resolveLocalPath(file)
+		if !ok {
+			json.NewEncoder(w).Encode(map[string]string{"status": "not_found", "remote": file}) //nolint:errcheck
+			return
+		}
+		psURL := "phpstorm://open?file=" + url.QueryEscape(local)
+		if line != "" {
+			psURL += "&line=" + line
+		}
+		exec.Command("open", psURL).Start() //nolint:errcheck
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
+	})
+
+	mux.HandleFunc("/pick-file", func(w http.ResponseWriter, r *http.Request) {
+		remote := r.URL.Query().Get("remote")
+		result := make(chan string, 1)
+		wv.Dispatch(func() { result <- PickLocalFile() })
+		local := <-result
+		if local == "" {
+			w.WriteHeader(499) // user cancelled
+			return
+		}
+		if remote != "" {
+			addMapping(remote, local)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "local": local}) //nolint:errcheck
+	})
+
 	wv.SetTitle("Log Viewer")
 	wv.SetSize(1280, 800, webview.HintNone)
 	wv.Bind("nativeQuit", func() { os.Exit(0) }) //nolint:errcheck

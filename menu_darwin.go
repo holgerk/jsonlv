@@ -3,6 +3,7 @@ package main
 /*
 #cgo CFLAGS: -x objective-c
 #cgo LDFLAGS: -framework Cocoa
+#include <stdlib.h>
 #import <Cocoa/Cocoa.h>
 
 static void dot(NSColor *c, CGFloat x, CGFloat y, CGFloat r) {
@@ -51,6 +52,19 @@ void setupAppIcon() {
     [[NSApplication sharedApplication] setApplicationIconImage:icon];
 }
 
+char* openFilePicker(void) {
+    NSOpenPanel *panel = [NSOpenPanel openPanel];
+    panel.canChooseFiles        = YES;
+    panel.canChooseDirectories  = NO;
+    panel.allowsMultipleSelection = NO;
+    panel.title = @"Lokale Datei auswählen";
+    if ([panel runModal] == NSModalResponseOK) {
+        NSString *path = [[[panel URLs] firstObject] path];
+        return strdup([path UTF8String]);
+    }
+    return NULL;
+}
+
 void setupAppMenu() {
     NSMenu *menubar = [NSMenu new];
     [NSApp setMainMenu:menubar];
@@ -80,11 +94,16 @@ void setupAppMenu() {
 }
 */
 import "C"
+import "unsafe"
 
-func setupAppMenu() {
-	C.setupAppMenu()
-}
+func setupAppMenu() { C.setupAppMenu() }
+func setupAppIcon()  { C.setupAppIcon() }
 
-func setupAppIcon() {
-	C.setupAppIcon()
+func PickLocalFile() string {
+	p := C.openFilePicker()
+	if p == nil {
+		return ""
+	}
+	defer C.free(unsafe.Pointer(p))
+	return C.GoString(p)
 }
