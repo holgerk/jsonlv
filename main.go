@@ -3,10 +3,13 @@ package main
 import (
 	"bufio"
 	_ "embed"
+	"encoding/json"
+	"flag"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -18,57 +21,98 @@ var htmlContent string
 
 const maxHistory = 50000
 
+// logMsg is the envelope sent over SSE.
+type logMsg struct {
+	S string `json:"s"` // source: basename of file, or "" for stdin
+	D string `json:"d"` // data:   original log line
+}
+
 type broker struct {
 	mu      sync.Mutex
-	history []string
-	clients map[chan string]struct{}
+	history []logMsg
+	clients map[chan logMsg]struct{}
 }
 
 func newBroker() *broker {
-	return &broker{clients: make(map[chan string]struct{})}
+	return &broker{clients: make(map[chan logMsg]struct{})}
 }
 
-func (b *broker) publish(line string) {
+func (b *broker) publish(source, line string) {
+	msg := logMsg{S: source, D: line}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if len(b.history) >= maxHistory {
 		b.history = b.history[1:]
 	}
-	b.history = append(b.history, line)
+	b.history = append(b.history, msg)
 	for ch := range b.clients {
 		select {
-		case ch <- line:
+		case ch <- msg:
 		default:
 		}
 	}
 }
 
-func (b *broker) subscribe() ([]string, chan string) {
+func (b *broker) subscribe() ([]logMsg, chan logMsg) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	hist := make([]string, len(b.history))
+	hist := make([]logMsg, len(b.history))
 	copy(hist, b.history)
-	ch := make(chan string, 1024)
+	ch := make(chan logMsg, 1024)
 	b.clients[ch] = struct{}{}
 	return hist, ch
 }
 
-func (b *broker) unsubscribe(ch chan string) {
+func (b *broker) unsubscribe(ch chan logMsg) {
 	b.mu.Lock()
 	delete(b.clients, ch)
 	b.mu.Unlock()
 }
 
+func sendMsg(w http.ResponseWriter, flusher http.Flusher, msg logMsg) {
+	data, _ := json.Marshal(msg)
+	fmt.Fprintf(w, "data: %s\n\n", data)
+	flusher.Flush()
+}
+
 func main() {
+	follow := flag.Bool("f", false, "follow file(s) for new lines")
+	lines := flag.Int("n", 1000, "number of lines from end of file")
+	flag.Parse()
+	files := flag.Args()
+
 	b := newBroker()
 
-	go func() {
-		scanner := bufio.NewScanner(os.Stdin)
-		scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
-		for scanner.Scan() {
-			b.publish(scanner.Text())
+	if len(files) == 0 {
+		// Read from stdin
+		go func() {
+			scanner := bufio.NewScanner(os.Stdin)
+			scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+			for scanner.Scan() {
+				b.publish("", scanner.Text())
+			}
+		}()
+	} else {
+		for _, path := range files {
+			path := path
+			source := filepath.Base(path)
+			go func() {
+				tail, err := lastNLines(path, *lines)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "error: %s: %v\n", path, err)
+					return
+				}
+				for _, line := range tail {
+					if line != "" {
+						b.publish(source, line)
+					}
+				}
+				if *follow {
+					followFile(path, source, b)
+				}
+			}()
 		}
-	}()
+	}
 
 	mux := http.NewServeMux()
 
@@ -87,8 +131,8 @@ func main() {
 		hist, ch := b.subscribe()
 		defer b.unsubscribe(ch)
 
-		for i, line := range hist {
-			fmt.Fprintf(w, "data: %s\n\n", line)
+		for i, msg := range hist {
+			sendMsg(w, flusher, msg)
 			if i%200 == 0 {
 				flusher.Flush()
 			}
@@ -100,9 +144,8 @@ func main() {
 
 		for {
 			select {
-			case line := <-ch:
-				fmt.Fprintf(w, "data: %s\n\n", line)
-				flusher.Flush()
+			case msg := <-ch:
+				sendMsg(w, flusher, msg)
 			case <-heartbeat.C:
 				fmt.Fprintf(w, ": keep-alive\n\n")
 				flusher.Flush()

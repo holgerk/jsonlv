@@ -215,6 +215,7 @@
     .badge.ERROR { background: rgba(248,81,73,0.15);   color: #f85149; }
     .badge.DEBUG { background: rgba(139,148,158,0.12); color: var(--text-dim); }
 
+    .src  { color: var(--text-faint); flex-shrink: 0; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; opacity: 0.8; }
     .svc  { color: var(--svc-color); flex-shrink: 0; width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .msg  { color: var(--text); flex: 1; min-width: 0; overflow-wrap: break-word; word-break: break-word; }
     .entry[data-level="ERROR"] .msg { color: #ffa198; }
@@ -299,8 +300,9 @@
   </div>
 
   <script>
-    const BATCH   = 200;
-    const rawData = new WeakMap();
+    const BATCH      = 200;
+    const rawData    = new WeakMap(); // entry → raw log line string
+    const sourceData = new WeakMap(); // entry → source filename
 
     let domCount     = 0;
     let counts       = { total: 0, ERROR: 0, WARN: 0 };
@@ -339,7 +341,9 @@
 
     // ── entry building ────────────────────────────────────────────────────────
 
-    function buildEntry(raw) {
+    function buildEntry(item) {
+      const src = item.s || '';
+      const raw = item.d;
       let level = '', service = '', message = raw, ts = '', meta = '';
       try {
         const o = JSON.parse(raw);
@@ -362,10 +366,12 @@
       el.innerHTML =
         '<span class="ts">'                        + esc(ts)         + '</span>' +
         '<span class="badge ' + esc(level) + '">'  + esc(level||'—') + '</span>' +
+        (src ? '<span class="src">' + esc(src) + '</span>' : '') +
         '<span class="svc">'                       + esc(service)    + '</span>' +
         '<span class="msg">'                       + esc(message)    + '</span>' +
         (meta ? '<span class="meta">' + esc(meta) + '</span>' : '');
       rawData.set(el, raw);
+      sourceData.set(el, src);
       return el;
     }
 
@@ -384,12 +390,15 @@
         });
     }
 
-    function buildDetailsPanel(raw) {
+    function buildDetailsPanel(raw, src) {
       const panel = document.createElement('div');
       panel.className = 'details';
       const pre = document.createElement('pre');
-      try { pre.innerHTML = syntaxHighlight(JSON.parse(raw)); }
-      catch (_) { pre.textContent = raw; }
+      try {
+        const obj = JSON.parse(raw);
+        if (src) obj._source = src;
+        pre.innerHTML = syntaxHighlight(obj);
+      } catch (_) { pre.textContent = raw; }
       panel.appendChild(pre);
       return panel;
     }
@@ -407,10 +416,10 @@
       }
 
       const raw = rawData.get(entry);
-      const panel = buildDetailsPanel(raw);
+      const src = sourceData.get(entry);
+      const panel = buildDetailsPanel(raw, src);
       entry.after(panel);
       entry.classList.add('expanded');
-      // re-apply active search marks into the newly opened panel
       if (findTerm) {
         markTextNodes(panel.querySelector('pre'), findTerm.toLowerCase(), findTerm);
         findMatches = Array.from(list.querySelectorAll('mark'));
@@ -529,7 +538,7 @@
       needExpand.slice(0, MAX_AUTO_EXPAND).forEach(function(entry) {
         let panel = entry.nextElementSibling;
         if (!panel || !panel.classList.contains('details')) {
-          panel = buildDetailsPanel(rawData.get(entry));
+          panel = buildDetailsPanel(rawData.get(entry), sourceData.get(entry));
           panel.dataset.auto = '1';
           entry.after(panel);
           entry.classList.add('expanded');
@@ -607,7 +616,12 @@
 
     const es = new EventSource('/events');
     es.onmessage = function(e) {
-      queue.push(e.data);
+      try {
+        const msg = JSON.parse(e.data);
+        queue.push(msg);
+      } catch (_) {
+        queue.push({ s: '', d: e.data });
+      }
       if (!rafPending) { rafPending = true; requestAnimationFrame(drainQueue); }
     };
 
