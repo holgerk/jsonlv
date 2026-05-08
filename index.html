@@ -305,7 +305,7 @@
     const sourceData = new WeakMap(); // entry → source filename
 
     let domCount     = 0;
-    let counts       = { total: 0, ERROR: 0, WARN: 0 };
+    let counts       = { total: 0, INFO: 0, WARN: 0, ERROR: 0, DEBUG: 0 };
     let activeFilter = 'ALL';
     let autoScroll   = true;
     let rafPending   = false;
@@ -354,8 +354,7 @@
         const dur = o.duration_ms != null ? o.duration_ms + 'ms' : '';
         const st  = o.status_code  != null ? String(o.status_code) : '';
         meta = [dur, st].filter(Boolean).join(' · ');
-        if (level === 'ERROR') counts.ERROR++;
-        if (level === 'WARN')  counts.WARN++;
+        if (counts[level] !== undefined) counts[level]++;
       } catch (_) {}
       counts.total++;
 
@@ -445,6 +444,7 @@
       cntTotal.textContent = counts.total;
       cntError.textContent = counts.ERROR;
       cntWarn.textContent  = counts.WARN;
+      updateFilterCounts();
       if (autoScroll) list.scrollTop = list.scrollHeight;
       if (queue.length) { rafPending = true; requestAnimationFrame(drainQueue); }
     }
@@ -625,6 +625,19 @@
       if (!rafPending) { rafPending = true; requestAnimationFrame(drainQueue); }
     };
 
+    // ── filter button counts ──────────────────────────────────────────────────
+
+    function updateFilterCounts() {
+      document.querySelectorAll('.filter-btn').forEach(function(btn) {
+        const lvl = btn.dataset.level;
+        if (lvl === 'ALL') {
+          btn.textContent = 'All ' + counts.total;
+        } else if (counts[lvl] !== undefined) {
+          btn.textContent = lvl + ' ' + counts[lvl];
+        }
+      });
+    }
+
     // ── filter buttons ────────────────────────────────────────────────────────
 
     document.querySelectorAll('.filter-btn').forEach(function(btn) {
@@ -652,7 +665,8 @@
     document.getElementById('clear-btn').addEventListener('click', function() {
       list.querySelectorAll('.entry').forEach(function(e) { e.remove(); });
       domCount = 0;
-      counts   = { total: 0, ERROR: 0, WARN: 0 };
+      counts   = { total: 0, INFO: 0, WARN: 0, ERROR: 0, DEBUG: 0 };
+      updateFilterCounts();
       cntTotal.textContent = cntError.textContent = cntWarn.textContent = 0;
       empty.classList.remove('hidden');
       if (findTerm) closeFind();
