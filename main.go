@@ -79,7 +79,21 @@ func sendMsg(w http.ResponseWriter, flusher http.Flusher, msg logMsg) {
 
 var globalBroker *broker
 
+var (
+	tailedMu    sync.Mutex
+	tailedFiles = map[string]bool{}
+)
+
 func startTailing(path string) {
+	tailedMu.Lock()
+	already := tailedFiles[path]
+	if !already {
+		tailedFiles[path] = true
+	}
+	tailedMu.Unlock()
+	if already {
+		return
+	}
 	source := filepath.Base(path)
 	go func() {
 		tail, err := lastNLines(path, 1000)
