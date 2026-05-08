@@ -1,4 +1,4 @@
-module chromedemo
+module jsonlv
 
 go 1.22
 
