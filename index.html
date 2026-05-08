@@ -654,11 +654,24 @@
     // ── auto-scroll ───────────────────────────────────────────────────────────
 
     const asBtn = document.getElementById('autoscroll-btn');
-    asBtn.addEventListener('click', function() {
-      autoScroll = !autoScroll;
-      asBtn.classList.toggle('on', autoScroll);
-      if (autoScroll) list.scrollTop = list.scrollHeight;
+
+    function setAutoScroll(on) {
+      autoScroll = on;
+      asBtn.classList.toggle('on', on);
+      if (on) list.scrollTop = list.scrollHeight;
+    }
+
+    asBtn.addEventListener('click', function() { setAutoScroll(!autoScroll); });
+
+    let userScrolling = false;
+    list.addEventListener('scroll', function() {
+      if (userScrolling) {
+        const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 8;
+        setAutoScroll(atBottom);
+      }
     });
+    list.addEventListener('wheel',     function() { userScrolling = true; });
+    list.addEventListener('touchmove', function() { userScrolling = true; });
 
     // ── clear ─────────────────────────────────────────────────────────────────
 
