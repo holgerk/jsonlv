@@ -92,10 +92,11 @@
       transition: background 0.15s, color 0.15s;
     }
     .filter-btn.active        { background: var(--border); color: var(--text-hi); border-color: #58a6ff; }
-    .filter-btn.active.INFO   { border-color: #3fb950; color: #3fb950; }
-    .filter-btn.active.WARN   { border-color: #e3b341; color: #e3b341; }
-    .filter-btn.active.ERROR  { border-color: #f85149; color: #f85149; }
-    .filter-btn.active.DEBUG  { border-color: var(--text-dim); color: var(--text-dim); }
+    .filter-btn.active.INFO     { border-color: #3fb950; color: #3fb950; }
+    .filter-btn.active.WARN     { border-color: #e3b341; color: #e3b341; }
+    .filter-btn.active.ERROR    { border-color: #f85149; color: #f85149; }
+    .filter-btn.active.CRITICAL { border-color: #ff2d55; color: #ff2d55; }
+    .filter-btn.active.DEBUG    { border-color: var(--text-dim); color: var(--text-dim); }
 
     #autoscroll-btn {
       margin-left: auto;
@@ -203,25 +204,30 @@
     }
     .entry:hover { background: var(--bg-2); }
 
-    .entry[data-level="ERROR"] { background: rgba(248,81,73,0.05); }
+    .entry[data-level="ERROR"]    { background: rgba(248,81,73,0.05); }
     .entry[data-level="ERROR"]:hover { background: rgba(248,81,73,0.09); }
-    .entry[data-level="WARN"]  { background: rgba(227,179,65,0.04); }
+    .entry[data-level="CRITICAL"] { background: rgba(255,45,85,0.07); }
+    .entry[data-level="CRITICAL"]:hover { background: rgba(255,45,85,0.11); }
+    .entry[data-level="WARN"]     { background: rgba(227,179,65,0.04); }
     .entry[data-level="WARN"]:hover  { background: rgba(227,179,65,0.08); }
 
     .ts    { color: var(--text-faint); flex-shrink: 0; width: 90px; font-size: 11px; }
     .badge { flex-shrink: 0; width: 42px; text-align: center; font-size: 10px; font-weight: 700; padding: 1px 4px; border-radius: 4px; letter-spacing: 0.04em; }
-    .badge.INFO  { background: rgba(63,185,80,0.15);   color: #3fb950; }
-    .badge.WARN  { background: rgba(227,179,65,0.15);  color: #e3b341; }
-    .badge.ERROR { background: rgba(248,81,73,0.15);   color: #f85149; }
-    .badge.DEBUG { background: rgba(139,148,158,0.12); color: var(--text-dim); }
+    .badge.INFO     { background: rgba(63,185,80,0.15);   color: #3fb950; }
+    .badge.WARN     { background: rgba(227,179,65,0.15);  color: #e3b341; }
+    .badge.ERROR    { background: rgba(248,81,73,0.15);   color: #f85149; }
+    .badge.CRITICAL { background: rgba(255,45,85,0.2);    color: #ff2d55; }
+    .badge.DEBUG    { background: rgba(139,148,158,0.12); color: var(--text-dim); }
 
     .src  { color: var(--text-faint); flex-shrink: 0; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; opacity: 0.8; }
     .svc  { color: var(--svc-color); flex-shrink: 0; width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .msg  { color: var(--text); flex: 1; min-width: 0; overflow-wrap: break-word; word-break: break-word; }
-    .entry[data-level="ERROR"] .msg { color: #ffa198; }
-    .entry[data-level="WARN"]  .msg { color: #e3a008; }
-    body.light .entry[data-level="ERROR"] .msg { color: #cf222e; }
-    body.light .entry[data-level="WARN"]  .msg { color: #9a6700; }
+    .entry[data-level="ERROR"]    .msg { color: #ffa198; }
+    .entry[data-level="CRITICAL"] .msg { color: #ff6b8a; }
+    .entry[data-level="WARN"]     .msg { color: #e3a008; }
+    body.light .entry[data-level="ERROR"]    .msg { color: #cf222e; }
+    body.light .entry[data-level="CRITICAL"] .msg { color: #a8123e; }
+    body.light .entry[data-level="WARN"]     .msg { color: #9a6700; }
 
     .meta { color: var(--text-faint); flex-shrink: 0; font-size: 11px; }
     .entry.plain .msg { color: var(--text-dim); }
@@ -321,10 +327,11 @@
     <div class="stat warns">WARN <span id="cnt-warn">0</span></div>
     <div class="sep"></div>
     <button class="filter-btn active" data-level="ALL">All</button>
-    <button class="filter-btn INFO"  data-level="INFO">INFO</button>
-    <button class="filter-btn WARN"  data-level="WARN">WARN</button>
-    <button class="filter-btn ERROR" data-level="ERROR">ERROR</button>
-    <button class="filter-btn DEBUG" data-level="DEBUG">DEBUG</button>
+    <button class="filter-btn INFO"     data-level="INFO">INFO</button>
+    <button class="filter-btn WARN"     data-level="WARN">WARN</button>
+    <button class="filter-btn ERROR"    data-level="ERROR">ERROR</button>
+    <button class="filter-btn CRITICAL" data-level="CRITICAL">CRITICAL</button>
+    <button class="filter-btn DEBUG"    data-level="DEBUG">DEBUG</button>
     <button id="clear-btn">Clear</button>
     <button id="theme-btn">☀ Light</button>
     <button id="autoscroll-btn" class="on">⬇ Auto-scroll</button>
@@ -358,7 +365,7 @@
     let customColumns = [];
 
     let domCount     = 0;
-    let counts       = { total: 0, INFO: 0, WARN: 0, ERROR: 0, DEBUG: 0 };
+    let counts       = { total: 0, INFO: 0, WARN: 0, ERROR: 0, CRITICAL: 0, DEBUG: 0 };
     let activeFilter = 'ALL';
     let autoScroll   = true;
     let rafPending   = false;
@@ -402,6 +409,7 @@
       try {
         parsedObj = JSON.parse(raw);
         level   = (parsedObj.level_name || parsedObj.level || '').toUpperCase();
+        if (level === 'WARNING') level = 'WARN';
         service = parsedObj.channel || parsedObj.service || parsedObj.logger || '';
         message = parsedObj.message || parsedObj.msg || parsedObj.error || raw;
         ts      = fmtTime(parsedObj.datetime || parsedObj.timestamp || parsedObj.time || parsedObj['@timestamp'] || '');
@@ -417,7 +425,12 @@
       el.dataset.level = level;
       if (activeFilter !== 'ALL' && level !== activeFilter) el.classList.add('hidden');
       const colsHtml = customColumns.map(function(prop) {
-        const v = parsedObj && parsedObj[prop] !== undefined ? String(parsedObj[prop]) : '';
+        let v = '';
+        if (prop === '_source') {
+          v = src;
+        } else if (parsedObj && parsedObj[prop] !== undefined) {
+          v = String(parsedObj[prop]);
+        }
         const display = v.length > 35 ? v.slice(0, 35) + '…' : v;
         return '<span class="col" data-col="' + esc(prop) + '" title="' + esc(prop + ': ' + v) + '">' + esc(display) + '</span>';
       }).join('');
@@ -524,9 +537,13 @@
 
     function addColumnToEntries(prop) {
       list.querySelectorAll('.entry').forEach(function(entry) {
-        const raw = rawData.get(entry);
         let v = '';
-        try { const o = JSON.parse(raw); if (o[prop] !== undefined) v = String(o[prop]); } catch(_) {}
+        if (prop === '_source') {
+          v = sourceData.get(entry) || '';
+        } else {
+          const raw = rawData.get(entry);
+          try { const o = JSON.parse(raw); if (o[prop] !== undefined) v = String(o[prop]); } catch(_) {}
+        }
         const display = v.length > 35 ? v.slice(0, 35) + '…' : v;
         const span = document.createElement('span');
         span.className = 'col';
@@ -829,7 +846,7 @@
     document.getElementById('clear-btn').addEventListener('click', function() {
       list.querySelectorAll('.entry').forEach(function(e) { e.remove(); });
       domCount = 0;
-      counts   = { total: 0, INFO: 0, WARN: 0, ERROR: 0, DEBUG: 0 };
+      counts   = { total: 0, INFO: 0, WARN: 0, ERROR: 0, CRITICAL: 0, DEBUG: 0 };
       updateFilterCounts();
       cntTotal.textContent = cntError.textContent = cntWarn.textContent = 0;
       empty.classList.remove('hidden');
