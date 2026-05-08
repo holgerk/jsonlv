@@ -93,6 +93,73 @@
     }
     #clear-btn:hover { background: #30363d; color: #e6edf3; }
 
+    /* ── find bar ── */
+    #find-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 14px;
+      background: #1c2128;
+      border-bottom: 1px solid #388bfd55;
+      flex-shrink: 0;
+    }
+    #find-bar.hidden { display: none !important; }
+
+    #find-input {
+      font-family: inherit;
+      font-size: 12px;
+      padding: 3px 8px;
+      width: 220px;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #c9d1d9;
+      outline: none;
+    }
+    #find-input:focus { border-color: #388bfd; }
+    #find-input.no-results { border-color: #f85149; background: rgba(248,81,73,0.08); }
+
+    #find-status {
+      font-size: 11px;
+      color: #8b949e;
+      min-width: 70px;
+      white-space: nowrap;
+    }
+    #find-status.none { color: #f85149; }
+
+    .find-btn {
+      font-family: inherit;
+      font-size: 13px;
+      line-height: 1;
+      padding: 2px 6px;
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 5px;
+      color: #8b949e;
+      cursor: pointer;
+    }
+    .find-btn:hover { background: #30363d; color: #e6edf3; }
+    .find-btn:disabled { opacity: 0.3; cursor: default; }
+
+    #find-close {
+      margin-left: 2px;
+      font-size: 14px;
+      padding: 1px 5px;
+    }
+
+    /* ── highlight marks ── */
+    mark {
+      background: rgba(255, 214, 0, 0.35);
+      color: inherit;
+      border-radius: 2px;
+      padding: 0 1px;
+    }
+    mark.current {
+      background: #ff8c00;
+      color: #0d1117;
+      border-radius: 2px;
+    }
+
     /* ── log list ── */
     #log-list {
       flex: 1;
@@ -114,8 +181,6 @@
     }
     .entry:hover { background: #161b22; }
 
-    @keyframes fadein { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; } }
-
     .entry[data-level="ERROR"] { background: rgba(248,81,73,0.05); }
     .entry[data-level="ERROR"]:hover { background: rgba(248,81,73,0.09); }
     .entry[data-level="WARN"]  { background: rgba(227,179,65,0.04); }
@@ -135,7 +200,6 @@
 
     .meta { color: #484f58; flex-shrink: 0; font-size: 11px; }
 
-    /* plain (non-JSON) lines */
     .entry.plain .msg { color: #8b949e; }
 
     /* ── empty state ── */
@@ -170,6 +234,14 @@
     <button id="autoscroll-btn" class="on">⬇ Auto-scroll</button>
   </div>
 
+  <div id="find-bar" class="hidden">
+    <input id="find-input" type="text" placeholder="Suchen…" autocomplete="off" spellcheck="false">
+    <span id="find-status"></span>
+    <button class="find-btn" id="find-prev" title="Vorherige (Shift+Enter)">↑</button>
+    <button class="find-btn" id="find-next" title="Nächste (Enter)">↓</button>
+    <button class="find-btn" id="find-close" title="Schließen (Escape)">✕</button>
+  </div>
+
   <div id="log-list">
     <div id="empty">
       <div class="icon">◎</div>
@@ -178,21 +250,31 @@
   </div>
 
   <script>
-    const MAX_DOM  = 2000;
-    const BATCH    = 200;
+    const BATCH = 200;
 
-    let domCount   = 0;
-    let counts     = { total: 0, ERROR: 0, WARN: 0 };
+    let domCount     = 0;
+    let counts       = { total: 0, ERROR: 0, WARN: 0 };
     let activeFilter = 'ALL';
-    let autoScroll = true;
-    let rafPending = false;
-    const queue    = [];
+    let autoScroll   = true;
+    let rafPending   = false;
+    const queue      = [];
 
-    const list     = document.getElementById('log-list');
-    const empty    = document.getElementById('empty');
-    const cntTotal = document.getElementById('cnt-total');
-    const cntError = document.getElementById('cnt-error');
-    const cntWarn  = document.getElementById('cnt-warn');
+    // find state
+    let findMatches  = [];
+    let findIdx      = -1;
+    let findTerm     = '';
+    let findTimer    = null;
+
+    const list       = document.getElementById('log-list');
+    const empty      = document.getElementById('empty');
+    const cntTotal   = document.getElementById('cnt-total');
+    const cntError   = document.getElementById('cnt-error');
+    const cntWarn    = document.getElementById('cnt-warn');
+    const findBar    = document.getElementById('find-bar');
+    const findInput  = document.getElementById('find-input');
+    const findStatus = document.getElementById('find-status');
+
+    // ── helpers ──────────────────────────────────────────────────────────────
 
     function fmtTime(ts) {
       if (!ts) return '';
@@ -204,6 +286,8 @@
     function esc(s) {
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
+
+    // ── entry building ────────────────────────────────────────────────────────
 
     function buildEntry(raw) {
       let level = '', service = '', message = raw, ts = '', meta = '';
@@ -226,39 +310,162 @@
       el.dataset.level = level;
       if (activeFilter !== 'ALL' && level !== activeFilter) el.classList.add('hidden');
       el.innerHTML =
-        '<span class="ts">'                             + esc(ts)          + '</span>' +
-        '<span class="badge ' + esc(level) + '">'      + esc(level||'—')  + '</span>' +
-        '<span class="svc">'                            + esc(service)     + '</span>' +
-        '<span class="msg">'                            + esc(message)     + '</span>' +
+        '<span class="ts">'                        + esc(ts)         + '</span>' +
+        '<span class="badge ' + esc(level) + '">'  + esc(level||'—') + '</span>' +
+        '<span class="svc">'                       + esc(service)    + '</span>' +
+        '<span class="msg">'                       + esc(message)    + '</span>' +
         (meta ? '<span class="meta">' + esc(meta) + '</span>' : '');
       return el;
     }
+
+    // ── queue drain ───────────────────────────────────────────────────────────
 
     function drainQueue() {
       rafPending = false;
       if (!queue.length) return;
 
       empty.classList.add('hidden');
-      const n   = Math.min(BATCH, queue.length);
+      const n    = Math.min(BATCH, queue.length);
       const frag = document.createDocumentFragment();
       for (let i = 0; i < n; i++) frag.appendChild(buildEntry(queue[i]));
       queue.splice(0, n);
       domCount += n;
-
       list.appendChild(frag);
-
-      while (domCount > MAX_DOM) {
-        const el = list.querySelector('.entry');
-        if (el) { el.remove(); domCount--; } else break;
-      }
 
       cntTotal.textContent = counts.total;
       cntError.textContent = counts.ERROR;
       cntWarn.textContent  = counts.WARN;
       if (autoScroll) list.scrollTop = list.scrollHeight;
-
       if (queue.length) { rafPending = true; requestAnimationFrame(drainQueue); }
     }
+
+    // ── find / search ─────────────────────────────────────────────────────────
+
+    function openFind() {
+      findBar.classList.remove('hidden');
+      findInput.focus();
+      findInput.select();
+      autoScroll = false;
+      document.getElementById('autoscroll-btn').classList.remove('on');
+    }
+
+    function closeFind() {
+      findBar.classList.add('hidden');
+      clearMarks();
+      findInput.value = '';
+      findStatus.textContent = '';
+      findStatus.className = '';
+      findTerm = '';
+    }
+
+    function markTextNodes(el, lterm, term) {
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+      const nodes  = [];
+      let node;
+      while ((node = walker.nextNode())) nodes.push(node);
+
+      nodes.forEach(function(tn) {
+        const text  = tn.textContent;
+        const lower = text.toLowerCase();
+        let pos = lower.indexOf(lterm);
+        if (pos === -1) return;
+
+        const frag = document.createDocumentFragment();
+        let last = 0;
+        while (pos !== -1) {
+          if (pos > last) frag.appendChild(document.createTextNode(text.slice(last, pos)));
+          const m = document.createElement('mark');
+          m.textContent = text.slice(pos, pos + term.length);
+          frag.appendChild(m);
+          last = pos + term.length;
+          pos  = lower.indexOf(lterm, last);
+        }
+        if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+        tn.parentNode.replaceChild(frag, tn);
+      });
+    }
+
+    function clearMarks() {
+      list.querySelectorAll('mark').forEach(function(m) {
+        const parent = m.parentNode;
+        parent.replaceChild(document.createTextNode(m.textContent), m);
+        parent.normalize();
+      });
+      findMatches = [];
+      findIdx     = -1;
+    }
+
+    function doSearch(term) {
+      clearMarks();
+      findTerm = term;
+      if (!term) { updateFindStatus(); return; }
+
+      const lterm = term.toLowerCase();
+      list.querySelectorAll('.entry').forEach(function(entry) {
+        markTextNodes(entry.querySelector('.msg'), lterm, term);
+        markTextNodes(entry.querySelector('.svc'), lterm, term);
+        markTextNodes(entry.querySelector('.ts'),  lterm, term);
+      });
+
+      findMatches = Array.from(list.querySelectorAll('mark'));
+      findIdx     = findMatches.length > 0 ? 0 : -1;
+      if (findIdx >= 0) activateCurrent();
+      updateFindStatus();
+    }
+
+    function activateCurrent() {
+      findMatches.forEach(function(m, i) { m.classList.toggle('current', i === findIdx); });
+      findMatches[findIdx].scrollIntoView({ block: 'center', behavior: 'instant' });
+    }
+
+    function findNext() {
+      if (!findMatches.length) return;
+      findIdx = (findIdx + 1) % findMatches.length;
+      activateCurrent();
+      updateFindStatus();
+    }
+
+    function findPrev() {
+      if (!findMatches.length) return;
+      findIdx = (findIdx - 1 + findMatches.length) % findMatches.length;
+      activateCurrent();
+      updateFindStatus();
+    }
+
+    function updateFindStatus() {
+      if (!findTerm) { findStatus.textContent = ''; findStatus.className = ''; return; }
+      if (!findMatches.length) {
+        findStatus.textContent = 'Keine Treffer';
+        findStatus.className   = 'none';
+        findInput.classList.add('no-results');
+      } else {
+        findStatus.textContent = (findIdx + 1) + ' / ' + findMatches.length;
+        findStatus.className   = '';
+        findInput.classList.remove('no-results');
+      }
+    }
+
+    // find bar events
+    findInput.addEventListener('input', function() {
+      clearTimeout(findTimer);
+      findTimer = setTimeout(function() { doSearch(findInput.value); }, 150);
+    });
+    findInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter')  { e.preventDefault(); e.shiftKey ? findPrev() : findNext(); }
+      if (e.key === 'Escape') { e.preventDefault(); closeFind(); }
+    });
+    document.getElementById('find-prev').addEventListener('click', findPrev);
+    document.getElementById('find-next').addEventListener('click', findNext);
+    document.getElementById('find-close').addEventListener('click', closeFind);
+
+    // ── global keyboard shortcuts ─────────────────────────────────────────────
+
+    document.addEventListener('keydown', function(e) {
+      if (e.metaKey && e.key === 'f') { e.preventDefault(); openFind(); }
+      if (e.metaKey && e.key === 'q') { e.preventDefault(); window.nativeQuit(); }
+    });
+
+    // ── SSE ───────────────────────────────────────────────────────────────────
 
     const es = new EventSource('/events');
     es.onmessage = function(e) {
@@ -266,31 +473,37 @@
       if (!rafPending) { rafPending = true; requestAnimationFrame(drainQueue); }
     };
 
-    // Filter buttons
-    document.querySelectorAll('.filter-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
+    // ── filter buttons ────────────────────────────────────────────────────────
+
+    document.querySelectorAll('.filter-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
         activeFilter = btn.dataset.level;
-        document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });
         btn.classList.add('active');
-        list.querySelectorAll('.entry').forEach(e => {
+        list.querySelectorAll('.entry').forEach(function(e) {
           e.classList.toggle('hidden', activeFilter !== 'ALL' && e.dataset.level !== activeFilter);
         });
       });
     });
 
+    // ── auto-scroll ───────────────────────────────────────────────────────────
+
     const asBtn = document.getElementById('autoscroll-btn');
-    asBtn.addEventListener('click', () => {
+    asBtn.addEventListener('click', function() {
       autoScroll = !autoScroll;
       asBtn.classList.toggle('on', autoScroll);
       if (autoScroll) list.scrollTop = list.scrollHeight;
     });
 
-    document.getElementById('clear-btn').addEventListener('click', () => {
-      list.querySelectorAll('.entry').forEach(e => e.remove());
+    // ── clear ─────────────────────────────────────────────────────────────────
+
+    document.getElementById('clear-btn').addEventListener('click', function() {
+      list.querySelectorAll('.entry').forEach(function(e) { e.remove(); });
       domCount = 0;
-      counts = { total: 0, ERROR: 0, WARN: 0 };
+      counts   = { total: 0, ERROR: 0, WARN: 0 };
       cntTotal.textContent = cntError.textContent = cntWarn.textContent = 0;
       empty.classList.remove('hidden');
+      if (findTerm) closeFind();
     });
   </script>
 </body>

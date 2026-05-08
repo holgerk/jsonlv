@@ -114,8 +114,10 @@ func main() {
 
 	wv := webview.New(false)
 	defer wv.Destroy()
+	setupAppMenu()
 	wv.SetTitle("Log Viewer")
 	wv.SetSize(1280, 800, webview.HintNone)
+	wv.Bind("nativeQuit", func() { os.Exit(0) }) //nolint:errcheck
 	wv.Navigate(fmt.Sprintf("http://127.0.0.1:%d", port))
 	wv.Run()
 }
