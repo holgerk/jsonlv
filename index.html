@@ -202,6 +202,34 @@
 
     .entry.plain .msg { color: #8b949e; }
 
+    .entry { cursor: pointer; }
+    .entry.expanded { border-bottom: none; background: #1c2128 !important; }
+
+    /* ── details panel ── */
+    .details {
+      background: #161b22;
+      border-left: 3px solid #30363d;
+      border-bottom: 1px solid #30363d;
+      padding: 10px 14px 10px 56px;
+      max-height: 420px;
+      overflow-y: auto;
+    }
+    .details::-webkit-scrollbar { width: 4px; }
+    .details::-webkit-scrollbar-thumb { background: #30363d; border-radius: 2px; }
+    .details pre {
+      font-family: inherit;
+      font-size: 11px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #8b949e;
+    }
+    .jk { color: #79c0ff; }
+    .js { color: #a5d6ff; }
+    .jn { color: #f2cc60; }
+    .jb { color: #ff7b72; }
+    .jz { color: #6e7681; }
+
     /* ── empty state ── */
     #empty {
       display: flex;
@@ -250,7 +278,8 @@
   </div>
 
   <script>
-    const BATCH = 200;
+    const BATCH   = 200;
+    const rawData = new WeakMap();
 
     let domCount     = 0;
     let counts       = { total: 0, ERROR: 0, WARN: 0 };
@@ -315,8 +344,51 @@
         '<span class="svc">'                       + esc(service)    + '</span>' +
         '<span class="msg">'                       + esc(message)    + '</span>' +
         (meta ? '<span class="meta">' + esc(meta) + '</span>' : '');
+      rawData.set(el, raw);
       return el;
     }
+
+    // ── details expand ────────────────────────────────────────────────────────
+
+    function syntaxHighlight(obj) {
+      const s = JSON.stringify(obj, null, 2)
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return s.replace(
+        /("(?:\\u[\da-fA-F]{4}|\\[^u]|[^\\"])*"(\s*:)?|true|false|null|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+        function(m) {
+          if (/^"/.test(m)) return m.endsWith(':') ? '<span class="jk">'+m+'</span>' : '<span class="js">'+m+'</span>';
+          if (m==='true'||m==='false') return '<span class="jb">'+m+'</span>';
+          if (m==='null') return '<span class="jz">'+m+'</span>';
+          return '<span class="jn">'+m+'</span>';
+        });
+    }
+
+    list.addEventListener('click', function(e) {
+      if (window.getSelection().toString()) return;
+      const entry = e.target.closest('.entry');
+      if (!entry) return;
+
+      const next = entry.nextElementSibling;
+      if (next && next.classList.contains('details')) {
+        next.remove();
+        entry.classList.remove('expanded');
+        return;
+      }
+
+      const raw = rawData.get(entry);
+      const panel = document.createElement('div');
+      panel.className = 'details';
+      const pre = document.createElement('pre');
+      try {
+        pre.innerHTML = syntaxHighlight(JSON.parse(raw));
+      } catch (_) {
+        pre.textContent = raw;
+      }
+      panel.appendChild(pre);
+      entry.after(panel);
+      entry.classList.add('expanded');
+      panel.scrollIntoView({ block: 'nearest' });
+    });
 
     // ── queue drain ───────────────────────────────────────────────────────────
 
