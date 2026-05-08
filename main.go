@@ -165,6 +165,7 @@ func main() {
 	wv := webview.New(true)
 	defer wv.Destroy()
 	setupAppMenu()
+	setupAppIcon()
 	wv.SetTitle("Log Viewer")
 	wv.SetSize(1280, 800, webview.HintNone)
 	wv.Bind("nativeQuit", func() { os.Exit(0) }) //nolint:errcheck
