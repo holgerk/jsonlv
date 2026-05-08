@@ -173,7 +173,7 @@
 
     .entry {
       display: flex;
-      align-items: baseline;
+      align-items: flex-start;
       gap: 8px;
       padding: 3px 14px;
       border-bottom: 1px solid transparent;
@@ -194,7 +194,7 @@
     .badge.DEBUG { background: rgba(139,148,158,0.12); color: #8b949e; }
 
     .svc  { color: #79c0ff; flex-shrink: 0; width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .msg  { color: #c9d1d9; flex: 1; }
+    .msg  { color: #c9d1d9; flex: 1; min-width: 0; overflow-wrap: break-word; word-break: break-word; }
     .entry[data-level="ERROR"] .msg { color: #ffa198; }
     .entry[data-level="WARN"]  .msg { color: #f0c040; }
 
