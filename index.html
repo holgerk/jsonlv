@@ -363,6 +363,16 @@
         });
     }
 
+    function buildDetailsPanel(raw) {
+      const panel = document.createElement('div');
+      panel.className = 'details';
+      const pre = document.createElement('pre');
+      try { pre.innerHTML = syntaxHighlight(JSON.parse(raw)); }
+      catch (_) { pre.textContent = raw; }
+      panel.appendChild(pre);
+      return panel;
+    }
+
     list.addEventListener('click', function(e) {
       if (window.getSelection().toString()) return;
       const entry = e.target.closest('.entry');
@@ -376,17 +386,15 @@
       }
 
       const raw = rawData.get(entry);
-      const panel = document.createElement('div');
-      panel.className = 'details';
-      const pre = document.createElement('pre');
-      try {
-        pre.innerHTML = syntaxHighlight(JSON.parse(raw));
-      } catch (_) {
-        pre.textContent = raw;
-      }
-      panel.appendChild(pre);
+      const panel = buildDetailsPanel(raw);
       entry.after(panel);
       entry.classList.add('expanded');
+      // re-apply active search marks into the newly opened panel
+      if (findTerm) {
+        markTextNodes(panel.querySelector('pre'), findTerm.toLowerCase(), findTerm);
+        findMatches = Array.from(list.querySelectorAll('mark'));
+        updateFindStatus();
+      }
       panel.scrollIntoView({ block: 'nearest' });
     });
 
@@ -423,11 +431,19 @@
 
     function closeFind() {
       findBar.classList.add('hidden');
+      collapseAutoExpanded();
       clearMarks();
       findInput.value = '';
       findStatus.textContent = '';
       findStatus.className = '';
       findTerm = '';
+    }
+
+    function collapseAutoExpanded() {
+      list.querySelectorAll('.details[data-auto]').forEach(function(d) {
+        if (d.previousElementSibling) d.previousElementSibling.classList.remove('expanded');
+        d.remove();
+      });
     }
 
     function markTextNodes(el, lterm, term) {
@@ -467,16 +483,37 @@
       findIdx     = -1;
     }
 
+    const MAX_AUTO_EXPAND = 200;
+
     function doSearch(term) {
+      collapseAutoExpanded();
       clearMarks();
       findTerm = term;
       if (!term) { updateFindStatus(); return; }
 
       const lterm = term.toLowerCase();
-      list.querySelectorAll('.entry').forEach(function(entry) {
+      const entries = Array.from(list.querySelectorAll('.entry'));
+
+      // First pass: mark visible spans + collect entries with raw JSON matches
+      const needExpand = [];
+      entries.forEach(function(entry) {
         markTextNodes(entry.querySelector('.msg'), lterm, term);
         markTextNodes(entry.querySelector('.svc'), lterm, term);
         markTextNodes(entry.querySelector('.ts'),  lterm, term);
+        const raw = rawData.get(entry);
+        if (raw && raw.toLowerCase().includes(lterm)) needExpand.push(entry);
+      });
+
+      // Second pass: auto-expand (capped to avoid DOM explosion)
+      needExpand.slice(0, MAX_AUTO_EXPAND).forEach(function(entry) {
+        let panel = entry.nextElementSibling;
+        if (!panel || !panel.classList.contains('details')) {
+          panel = buildDetailsPanel(rawData.get(entry));
+          panel.dataset.auto = '1';
+          entry.after(panel);
+          entry.classList.add('expanded');
+        }
+        markTextNodes(panel.querySelector('pre'), lterm, term);
       });
 
       findMatches = Array.from(list.querySelectorAll('mark'));
