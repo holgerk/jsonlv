@@ -37,7 +37,7 @@
       background: var(--bg);
       color: var(--text);
       font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
-      font-size: 12px;
+      font-size: var(--font-size, 12px);
       display: flex;
       flex-direction: column;
       height: 100vh;
@@ -211,16 +211,16 @@
     .entry[data-level="WARN"]     { background: rgba(227,179,65,0.04); }
     .entry[data-level="WARN"]:hover  { background: rgba(227,179,65,0.08); }
 
-    .ts    { color: var(--text-faint); flex-shrink: 0; width: 90px; font-size: 11px; }
-    .badge { flex-shrink: 0; width: 42px; text-align: center; font-size: 10px; font-weight: 700; padding: 1px 4px; border-radius: 4px; letter-spacing: 0.04em; }
+    .ts    { color: var(--text-faint); flex-shrink: 0; width: 7.5em; font-size: 0.9em; }
+    .badge { flex-shrink: 0; width: 3.5em; text-align: center; font-size: 0.83em; font-weight: 700; padding: 1px 4px; border-radius: 4px; letter-spacing: 0.04em; }
     .badge.INFO     { background: rgba(63,185,80,0.15);   color: #3fb950; }
     .badge.WARN     { background: rgba(227,179,65,0.15);  color: #e3b341; }
     .badge.ERROR    { background: rgba(248,81,73,0.15);   color: #f85149; }
     .badge.CRITICAL { background: rgba(255,45,85,0.2);    color: #ff2d55; }
     .badge.DEBUG    { background: rgba(139,148,158,0.12); color: var(--text-dim); }
 
-    .src  { color: var(--text-faint); flex-shrink: 0; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; opacity: 0.8; }
-    .svc  { color: var(--svc-color); flex-shrink: 0; width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .src  { color: var(--text-faint); flex-shrink: 0; max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.83em; opacity: 0.8; }
+    .svc  { color: var(--svc-color); flex-shrink: 0; width: 11.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .msg  { color: var(--text); flex: 1; min-width: 0; overflow-wrap: break-word; word-break: break-word; }
     .entry[data-level="ERROR"]    .msg { color: #ffa198; }
     .entry[data-level="CRITICAL"] .msg { color: #ff6b8a; }
@@ -229,7 +229,7 @@
     body.light .entry[data-level="CRITICAL"] .msg { color: #a8123e; }
     body.light .entry[data-level="WARN"]     .msg { color: #9a6700; }
 
-    .meta { color: var(--text-faint); flex-shrink: 0; font-size: 11px; }
+    .meta { color: var(--text-faint); flex-shrink: 0; font-size: 0.9em; }
     .entry.plain .msg { color: var(--text-dim); }
     .entry.expanded { border-bottom: none; background: var(--bg-3) !important; }
 
@@ -242,7 +242,7 @@
     }
     .details pre {
       font-family: inherit;
-      font-size: 11px;
+      font-size: 0.9em;
       line-height: 1.6;
       white-space: pre-wrap;
       word-break: break-all;
@@ -275,11 +275,11 @@
     /* ── custom columns ── */
     .col {
       flex-shrink: 0;
-      max-width: 160px;
+      max-width: 13em;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      font-size: 11px;
+      font-size: 0.9em;
       color: var(--text-dim);
       border-left: 1px solid var(--border);
       padding-left: 6px;
@@ -775,9 +775,16 @@
 
     // ── global keyboard shortcuts ─────────────────────────────────────────────
 
+    let fontSize = 12;
+    function applyFontSize() {
+      document.documentElement.style.setProperty('--font-size', fontSize + 'px');
+    }
+
     document.addEventListener('keydown', function(e) {
       if (e.metaKey && e.key === 'f') { e.preventDefault(); openFind(); }
       if (e.metaKey && e.key === 'q') { e.preventDefault(); window.nativeQuit(); }
+      if (e.metaKey && (e.key === '=' || e.key === '+')) { e.preventDefault(); fontSize = Math.min(fontSize + 1, 24); applyFontSize(); }
+      if (e.metaKey && e.key === '-') { e.preventDefault(); fontSize = Math.max(fontSize - 1, 8);  applyFontSize(); }
     });
 
     // ── SSE ───────────────────────────────────────────────────────────────────
