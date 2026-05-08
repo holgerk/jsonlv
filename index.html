@@ -293,6 +293,24 @@
     .file-link { color: var(--svc-color); text-decoration: none; }
     .file-link:hover { text-decoration: underline; }
 
+    /* ── row hover menu button ── */
+    .row-menu-btn {
+      flex-shrink: 0;
+      visibility: hidden;
+      font-size: 13px;
+      line-height: 1;
+      padding: 1px 5px;
+      color: var(--text-dim);
+      cursor: pointer;
+      border: none;
+      background: none;
+      font-family: inherit;
+      border-radius: 4px;
+      letter-spacing: 1px;
+    }
+    .entry:hover .row-menu-btn { visibility: visible; }
+    .row-menu-btn:hover { background: var(--border); color: var(--text-hi); }
+
     /* ── path-mapping modal ── */
     #path-modal { position: fixed; inset: 0; z-index: 10000; display: flex; align-items: center; justify-content: center; }
     #path-modal-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.45); }
@@ -307,7 +325,7 @@
     .modal-btn:disabled { opacity: 0.5; cursor: default; }
 
     /* ── context menu ── */
-    #ctx-menu {
+    #ctx-menu, #row-menu {
       position: fixed;
       background: var(--bg-2);
       border: 1px solid var(--border);
@@ -366,6 +384,10 @@
     <div class="ctx-label" id="ctx-prop-label"></div>
     <div class="ctx-item" id="ctx-add-col">Spalte hinzufügen</div>
     <div class="ctx-item" id="ctx-rem-col">Spalte entfernen</div>
+  </div>
+
+  <div id="row-menu" class="hidden">
+    <div class="ctx-item" id="row-copy-json">Als JSON kopieren</div>
   </div>
 
   <div id="log-list">
@@ -473,7 +495,8 @@
         '<span class="svc">'                       + esc(service)    + '</span>' +
         colsHtml +
         '<span class="msg">'                       + esc(message)    + '</span>' +
-        (meta ? '<span class="meta">' + esc(meta) + '</span>' : '');
+        (meta ? '<span class="meta">' + esc(meta) + '</span>' : '') +
+        '<button class="row-menu-btn" title="Optionen">···</button>';
       const msgEl = el.querySelector('.msg');
       if (msgEl) linkifyFilePaths(msgEl);
       rawData.set(el, raw);
@@ -621,9 +644,31 @@
 
     document.addEventListener('click', function(e) {
       if (!ctxMenu.contains(e.target)) closeCtxMenu();
+      if (!rowMenu.contains(e.target)) rowMenu.classList.add('hidden');
     });
     document.addEventListener('keydown', function(e) {
-      if (e.key === 'Escape') closeCtxMenu();
+      if (e.key === 'Escape') { closeCtxMenu(); rowMenu.classList.add('hidden'); }
+    });
+
+    // ── row hover menu ────────────────────────────────────────────────────────
+
+    const rowMenu = document.getElementById('row-menu');
+    let rowMenuEntry = null;
+
+    function openRowMenu(x, y) {
+      rowMenu.classList.remove('hidden');
+      const mw = rowMenu.offsetWidth, mh = rowMenu.offsetHeight;
+      rowMenu.style.left = Math.min(x, window.innerWidth  - mw - 8) + 'px';
+      rowMenu.style.top  = Math.min(y, window.innerHeight - mh - 8) + 'px';
+    }
+
+    document.getElementById('row-copy-json').addEventListener('click', function() {
+      if (!rowMenuEntry) return;
+      const raw = rawData.get(rowMenuEntry);
+      let text = raw;
+      try { text = JSON.stringify(JSON.parse(raw), null, 2); } catch(_) {}
+      navigator.clipboard.writeText(text);
+      rowMenu.classList.add('hidden');
     });
 
     function withScrollAnchor(fn) {
@@ -675,6 +720,14 @@
       if (window.getSelection().toString()) return;
 
       // Property key click → context menu
+      const rowBtn = e.target.closest('.row-menu-btn');
+      if (rowBtn) {
+        e.stopPropagation();
+        rowMenuEntry = rowBtn.closest('.entry');
+        openRowMenu(e.clientX, e.clientY);
+        return;
+      }
+
       const propKey = e.target.closest('.prop-key');
       if (propKey) {
         e.stopPropagation();
