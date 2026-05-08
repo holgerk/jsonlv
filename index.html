@@ -535,28 +535,43 @@
       if (e.key === 'Escape') closeCtxMenu();
     });
 
+    function withScrollAnchor(fn) {
+      const listRect = list.getBoundingClientRect();
+      let anchor = null, anchorTop = 0;
+      for (const entry of list.querySelectorAll('.entry')) {
+        const r = entry.getBoundingClientRect();
+        if (r.bottom > listRect.top) { anchor = entry; anchorTop = r.top; break; }
+      }
+      fn();
+      if (anchor) list.scrollTop += anchor.getBoundingClientRect().top - anchorTop;
+    }
+
     function addColumnToEntries(prop) {
-      list.querySelectorAll('.entry').forEach(function(entry) {
-        let v = '';
-        if (prop === '_source') {
-          v = sourceData.get(entry) || '';
-        } else {
-          const raw = rawData.get(entry);
-          try { const o = JSON.parse(raw); if (o[prop] !== undefined) v = String(o[prop]); } catch(_) {}
-        }
-        const display = v.length > 35 ? v.slice(0, 35) + '…' : v;
-        const span = document.createElement('span');
-        span.className = 'col';
-        span.dataset.col = prop;
-        span.title = prop + ': ' + v;
-        span.textContent = display;
-        const msg = entry.querySelector('.msg');
-        if (msg) entry.insertBefore(span, msg);
+      withScrollAnchor(function() {
+        list.querySelectorAll('.entry').forEach(function(entry) {
+          let v = '';
+          if (prop === '_source') {
+            v = sourceData.get(entry) || '';
+          } else {
+            const raw = rawData.get(entry);
+            try { const o = JSON.parse(raw); if (o[prop] !== undefined) v = String(o[prop]); } catch(_) {}
+          }
+          const display = v.length > 35 ? v.slice(0, 35) + '…' : v;
+          const span = document.createElement('span');
+          span.className = 'col';
+          span.dataset.col = prop;
+          span.title = prop + ': ' + v;
+          span.textContent = display;
+          const msg = entry.querySelector('.msg');
+          if (msg) entry.insertBefore(span, msg);
+        });
       });
     }
 
     function removeColumnFromEntries(prop) {
-      list.querySelectorAll('.entry .col[data-col="' + prop + '"]').forEach(function(s) { s.remove(); });
+      withScrollAnchor(function() {
+        list.querySelectorAll('.entry .col[data-col="' + prop + '"]').forEach(function(s) { s.remove(); });
+      });
     }
 
     // ── details expand ────────────────────────────────────────────────────────
@@ -781,14 +796,9 @@
         list.scrollTop = list.scrollHeight;
         return;
       }
-      const listRect = list.getBoundingClientRect();
-      let anchor = null, anchorTop = 0;
-      for (const entry of list.querySelectorAll('.entry')) {
-        const r = entry.getBoundingClientRect();
-        if (r.bottom > listRect.top) { anchor = entry; anchorTop = r.top; break; }
-      }
-      document.documentElement.style.setProperty('--font-size', fontSize + 'px');
-      if (anchor) list.scrollTop += anchor.getBoundingClientRect().top - anchorTop;
+      withScrollAnchor(function() {
+        document.documentElement.style.setProperty('--font-size', fontSize + 'px');
+      });
     }
 
     document.addEventListener('keydown', function(e) {
