@@ -119,7 +119,7 @@ func main() {
 	port := ln.Addr().(*net.TCPAddr).Port
 	go http.Serve(ln, mux) //nolint:errcheck
 
-	wv := webview.New(false)
+	wv := webview.New(true)
 	defer wv.Destroy()
 	setupAppMenu()
 	wv.SetTitle("Log Viewer")
