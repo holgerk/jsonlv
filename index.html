@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Go WebView Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f0f1a;
+      color: #e0e0f0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .bg-orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(80px);
+      opacity: 0.15;
+      animation: drift 10s ease-in-out infinite alternate;
+    }
+    .bg-orb:nth-child(1) { width: 500px; height: 500px; background: #6c63ff; top: -100px; left: -100px; }
+    .bg-orb:nth-child(2) { width: 400px; height: 400px; background: #ff6b6b; bottom: -80px; right: -80px; animation-delay: -5s; }
+
+    @keyframes drift {
+      from { transform: translate(0, 0) scale(1); }
+      to   { transform: translate(40px, 30px) scale(1.1); }
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      width: 780px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .header {
+      text-align: center;
+    }
+    .header h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #6c63ff, #a78bfa, #60a5fa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .header p { color: #888; margin-top: 6px; font-size: 0.9rem; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      padding: 24px;
+      backdrop-filter: blur(10px);
+    }
+    .card-title {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #666;
+      margin-bottom: 12px;
+    }
+
+    /* Clock */
+    #clock {
+      font-size: 2.8rem;
+      font-weight: 200;
+      letter-spacing: 0.05em;
+      color: #a78bfa;
+      font-variant-numeric: tabular-nums;
+    }
+    #date { color: #666; font-size: 0.85rem; margin-top: 4px; }
+
+    /* Counter */
+    .counter-value {
+      font-size: 3rem;
+      font-weight: 700;
+      color: #60a5fa;
+      font-variant-numeric: tabular-nums;
+      transition: transform 0.1s ease;
+    }
+    .counter-value.bump { transform: scale(1.2); }
+    .btn-row { display: flex; gap: 10px; margin-top: 14px; }
+    button {
+      flex: 1;
+      padding: 10px 0;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 1.2rem;
+      font-weight: 600;
+      transition: transform 0.1s, opacity 0.1s;
+    }
+    button:active { transform: scale(0.93); }
+    .btn-inc { background: linear-gradient(135deg, #6c63ff, #a78bfa); color: #fff; }
+    .btn-dec { background: rgba(255,255,255,0.06); color: #aaa; }
+    .btn-reset { background: rgba(255,80,80,0.15); color: #f87171; }
+
+    /* Progress bars */
+    .bar-row { margin-bottom: 10px; }
+    .bar-label { display: flex; justify-content: space-between; font-size: 0.8rem; color: #888; margin-bottom: 5px; }
+    .bar-track { height: 8px; background: rgba(255,255,255,0.06); border-radius: 99px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 99px; animation: grow 1.2s cubic-bezier(.17,.67,.42,1.2) forwards; }
+    @keyframes grow { from { width: 0 } }
+    .bar-fill.purple { background: linear-gradient(90deg, #6c63ff, #a78bfa); }
+    .bar-fill.blue   { background: linear-gradient(90deg, #2563eb, #60a5fa); }
+    .bar-fill.green  { background: linear-gradient(90deg, #059669, #34d399); }
+    .bar-fill.orange { background: linear-gradient(90deg, #d97706, #fbbf24); }
+
+    /* Canvas */
+    canvas {
+      width: 100%;
+      height: 120px;
+      border-radius: 8px;
+    }
+
+    /* Footer */
+    .footer {
+      text-align: center;
+      font-size: 0.75rem;
+      color: #444;
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-orb"></div>
+  <div class="bg-orb"></div>
+
+  <div class="container">
+    <div class="header">
+      <h1>Go WebView Demo</h1>
+      <p>Self-contained executable — HTML embedded via <code>//go:embed</code></p>
+    </div>
+
+    <div class="grid">
+      <!-- Clock -->
+      <div class="card">
+        <div class="card-title">Live Clock</div>
+        <div id="clock">--:--:--</div>
+        <div id="date"></div>
+      </div>
+
+      <!-- Counter -->
+      <div class="card">
+        <div class="card-title">Interactive Counter</div>
+        <div class="counter-value" id="counter">0</div>
+        <div class="btn-row">
+          <button class="btn-inc" onclick="change(1)">+</button>
+          <button class="btn-dec" onclick="change(-1)">−</button>
+          <button class="btn-reset" onclick="reset()">↺</button>
+        </div>
+      </div>
+
+      <!-- Bars -->
+      <div class="card">
+        <div class="card-title">Animated Metrics</div>
+        <div class="bar-row">
+          <div class="bar-label"><span>WebKit</span><span>94%</span></div>
+          <div class="bar-track"><div class="bar-fill purple" style="width:94%"></div></div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label"><span>Go Runtime</span><span>78%</span></div>
+          <div class="bar-track"><div class="bar-fill blue" style="width:78%"></div></div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label"><span>Embed Size</span><span>61%</span></div>
+          <div class="bar-track"><div class="bar-fill green" style="width:61%"></div></div>
+        </div>
+        <div class="bar-row">
+          <div class="bar-label"><span>Awesome</span><span>100%</span></div>
+          <div class="bar-track"><div class="bar-fill orange" style="width:100%"></div></div>
+        </div>
+      </div>
+
+      <!-- Canvas wave -->
+      <div class="card">
+        <div class="card-title">Canvas Animation</div>
+        <canvas id="wave"></canvas>
+      </div>
+    </div>
+
+    <div class="footer">Rendered inside a native WKWebView window · Go + webview/webview_go</div>
+  </div>
+
+  <script>
+    // Clock
+    function tick() {
+      const now = new Date();
+      document.getElementById('clock').textContent =
+        now.toLocaleTimeString('en-US', {hour12: false});
+      document.getElementById('date').textContent =
+        now.toLocaleDateString('en-US', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+    }
+    tick();
+    setInterval(tick, 1000);
+
+    // Counter
+    let count = 0;
+    function change(d) {
+      count += d;
+      const el = document.getElementById('counter');
+      el.textContent = count;
+      el.classList.remove('bump');
+      void el.offsetWidth;
+      el.classList.add('bump');
+    }
+    function reset() { count = 0; document.getElementById('counter').textContent = 0; }
+
+    // Canvas wave
+    const canvas = document.getElementById('wave');
+    const ctx = canvas.getContext('2d');
+    let t = 0;
+    function drawWave() {
+      canvas.width = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+      const w = canvas.width, h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+      const waves = [
+        { color: 'rgba(108,99,255,0.5)', amp: 18, freq: 0.025, speed: 0.04 },
+        { color: 'rgba(96,165,250,0.4)', amp: 12, freq: 0.035, speed: 0.06 },
+        { color: 'rgba(167,139,250,0.3)', amp: 22, freq: 0.018, speed: 0.03 },
+      ];
+      waves.forEach(({ color, amp, freq, speed }) => {
+        ctx.beginPath();
+        ctx.moveTo(0, h / 2);
+        for (let x = 0; x <= w; x++) {
+          ctx.lineTo(x, h / 2 + Math.sin(x * freq + t * speed * 50) * amp);
+        }
+        ctx.lineTo(w, h);
+        ctx.lineTo(0, h);
+        ctx.closePath();
+        ctx.fillStyle = color;
+        ctx.fill();
+      });
+      t++;
+      requestAnimationFrame(drawWave);
+    }
+    drawWave();
+  </script>
+</body>
+</html>
