@@ -428,8 +428,9 @@
         let v = '';
         if (prop === '_source') {
           v = src;
-        } else if (parsedObj && parsedObj[prop] !== undefined) {
-          v = String(parsedObj[prop]);
+        } else if (parsedObj !== null) {
+          const val = getNestedValue(parsedObj, prop);
+          if (val !== undefined && val !== null && typeof val !== 'object') v = String(val);
         }
         const display = v.length > 35 ? v.slice(0, 35) + '…' : v;
         return '<span class="col" data-col="' + esc(prop) + '" title="' + esc(prop + ': ' + v) + '">' + esc(display) + '</span>';
@@ -461,17 +462,31 @@
         });
     }
 
+    function getNestedValue(obj, path) {
+      const parts = path.split('.');
+      let cur = obj;
+      for (const p of parts) {
+        if (cur == null || typeof cur !== 'object') return undefined;
+        cur = cur[p];
+      }
+      return cur;
+    }
+
     function annotateTopLevelKeys(pre) {
+      const stack = [];
       pre.querySelectorAll('.jk').forEach(function(span) {
         const prev = span.previousSibling;
         if (!prev || prev.nodeType !== Node.TEXT_NODE) return;
         const text  = prev.textContent;
         const after = text.slice(text.lastIndexOf('\n') + 1);
-        if (after !== '  ') return; // only top-level (2-space indent)
-        const raw   = span.textContent;                    // e.g. "userId":
-        const name  = raw.slice(1, raw.lastIndexOf('"'));  // userId
+        const depth = after.length / 2; // 2 spaces per indent level → depth 1 = top-level
+        if (depth < 1) return;
+        const raw  = span.textContent;
+        const name = raw.slice(1, raw.lastIndexOf('"'));
+        while (stack.length >= depth) stack.pop();
+        stack.push(name);
         span.classList.add('prop-key');
-        span.dataset.prop = name;
+        span.dataset.prop = stack.join('.');
       });
     }
 
@@ -554,7 +569,11 @@
             v = sourceData.get(entry) || '';
           } else {
             const raw = rawData.get(entry);
-            try { const o = JSON.parse(raw); if (o[prop] !== undefined) v = String(o[prop]); } catch(_) {}
+            try {
+              const o = JSON.parse(raw);
+              const val = getNestedValue(o, prop);
+              if (val !== undefined && val !== null && typeof val !== 'object') v = String(val);
+            } catch(_) {}
           }
           const display = v.length > 35 ? v.slice(0, 35) + '…' : v;
           const span = document.createElement('span');
