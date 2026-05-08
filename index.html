@@ -776,7 +776,19 @@
 
     let fontSize = 12;
     function applyFontSize() {
+      if (autoScroll) {
+        document.documentElement.style.setProperty('--font-size', fontSize + 'px');
+        list.scrollTop = list.scrollHeight;
+        return;
+      }
+      const listRect = list.getBoundingClientRect();
+      let anchor = null, anchorTop = 0;
+      for (const entry of list.querySelectorAll('.entry')) {
+        const r = entry.getBoundingClientRect();
+        if (r.bottom > listRect.top) { anchor = entry; anchorTop = r.top; break; }
+      }
       document.documentElement.style.setProperty('--font-size', fontSize + 'px');
+      if (anchor) list.scrollTop += anchor.getBoundingClientRect().top - anchorTop;
     }
 
     document.addEventListener('keydown', function(e) {
