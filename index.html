@@ -324,6 +324,61 @@
     .modal-btn:hover:not(:disabled) { opacity: 0.85; }
     .modal-btn:disabled { opacity: 0.5; cursor: default; }
 
+    /* ── property filter bar ── */
+    #prop-filter-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 5px 14px;
+      background: var(--bg-2);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+    .prop-filter-group {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+    .prop-filter-label {
+      font-size: 10px;
+      color: var(--text-faint);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding-right: 2px;
+      white-space: nowrap;
+    }
+    .prop-filter-val {
+      font-family: inherit;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--bg-btn);
+      color: var(--text-dim);
+      cursor: pointer;
+      max-width: 16em;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .prop-filter-val:hover { background: var(--border); color: var(--text-hi); }
+    .prop-filter-val.active { background: var(--border); color: var(--text-hi); border-color: #58a6ff; }
+    .prop-filter-remove {
+      font-family: inherit;
+      font-size: 11px;
+      padding: 1px 5px;
+      border-radius: 4px;
+      border: none;
+      background: none;
+      color: var(--text-faint);
+      cursor: pointer;
+      margin-left: 2px;
+    }
+    .prop-filter-remove:hover { background: var(--border); color: var(--text-hi); }
+    .prop-filter-sep { width: 1px; height: 18px; background: var(--border); flex-shrink: 0; }
+
     /* ── context menu ── */
     #ctx-menu, #row-menu {
       position: fixed;
@@ -384,11 +439,14 @@
     <div class="ctx-label" id="ctx-prop-label"></div>
     <div class="ctx-item" id="ctx-add-col">Spalte hinzufügen</div>
     <div class="ctx-item" id="ctx-rem-col">Spalte entfernen</div>
+    <div class="ctx-item" id="ctx-add-filter">Filter hinzufügen</div>
   </div>
 
   <div id="row-menu" class="hidden">
     <div class="ctx-item" id="row-copy-json">Als JSON kopieren</div>
   </div>
+
+  <div id="prop-filter-bar" class="hidden"></div>
 
   <div id="log-list">
     <div id="empty">
@@ -419,6 +477,7 @@
     let domCount     = 0;
     let counts       = { total: 0, INFO: 0, WARN: 0, ERROR: 0, CRITICAL: 0, DEBUG: 0 };
     let activeFilter = 'ALL';
+    let activePropertyFilters = {}; // prop → { counts: Map<string,number>, active: Set<string> }
     let autoScroll   = true;
     let rafPending   = false;
     const queue      = [];
@@ -475,7 +534,7 @@
       const el = document.createElement('div');
       el.className = 'entry' + (level ? '' : ' plain');
       el.dataset.level = level;
-      if (activeFilter !== 'ALL' && level !== activeFilter) el.classList.add('hidden');
+      if (!entryMatchesFilters(level, parsedObj, src)) el.classList.add('hidden');
       const colsHtml = customColumns.map(function(prop) {
         let v = '';
         if (prop === '_source') {
@@ -525,6 +584,115 @@
         cur = cur[p];
       }
       return cur;
+    }
+
+    // ── property filters ──────────────────────────────────────────────────────
+
+    function entryMatchesFilters(level, parsedObj, src) {
+      if (activeFilter !== 'ALL' && level !== activeFilter) return false;
+      for (const prop in activePropertyFilters) {
+        const group = activePropertyFilters[prop];
+        if (group.active.size === 0) continue;
+        let val;
+        if (prop === '_source') {
+          val = src || '';
+        } else if (parsedObj !== null) {
+          const v = getNestedValue(parsedObj, prop);
+          val = (v !== undefined && v !== null && typeof v !== 'object') ? String(v) : '';
+        } else {
+          val = '';
+        }
+        if (!group.active.has(val)) return false;
+      }
+      return true;
+    }
+
+    function applyFilters() {
+      list.querySelectorAll('.entry').forEach(function(e) {
+        const level = e.dataset.level;
+        let parsedObj = null;
+        try { parsedObj = JSON.parse(rawData.get(e)); } catch(_) {}
+        const src = sourceData.get(e) || '';
+        const hide = !entryMatchesFilters(level, parsedObj, src);
+        e.classList.toggle('hidden', hide);
+        if (hide) {
+          const next = e.nextElementSibling;
+          if (next && next.classList.contains('details')) {
+            next.remove();
+            e.classList.remove('expanded');
+          }
+        }
+      });
+      if (autoScroll) list.scrollTop = list.scrollHeight;
+    }
+
+    function countPropertyValues(prop) {
+      const map = new Map();
+      list.querySelectorAll('.entry').forEach(function(e) {
+        let val;
+        if (prop === '_source') {
+          val = sourceData.get(e) || '';
+        } else {
+          try {
+            const o = JSON.parse(rawData.get(e));
+            const v = getNestedValue(o, prop);
+            val = (v !== undefined && v !== null && typeof v !== 'object') ? String(v) : '';
+          } catch(_) { val = ''; }
+        }
+        map.set(val, (map.get(val) || 0) + 1);
+      });
+      return map;
+    }
+
+    function renderPropertyFilters() {
+      const bar = document.getElementById('prop-filter-bar');
+      bar.innerHTML = '';
+      const props = Object.keys(activePropertyFilters);
+      if (props.length === 0) { bar.classList.add('hidden'); return; }
+      bar.classList.remove('hidden');
+      props.forEach(function(prop, idx) {
+        if (idx > 0) {
+          const sep = document.createElement('div');
+          sep.className = 'prop-filter-sep';
+          bar.appendChild(sep);
+        }
+        const group = activePropertyFilters[prop];
+        const grpEl = document.createElement('div');
+        grpEl.className = 'prop-filter-group';
+
+        const label = document.createElement('span');
+        label.className = 'prop-filter-label';
+        label.textContent = prop + ':';
+        grpEl.appendChild(label);
+
+        const sorted = Array.from(group.counts.entries()).sort(function(a, b) { return b[1] - a[1]; });
+        sorted.forEach(function(entry) {
+          const val = entry[0], cnt = entry[1];
+          const btn = document.createElement('button');
+          btn.className = 'prop-filter-val' + (group.active.has(val) ? ' active' : '');
+          btn.textContent = (val || '—') + ' (' + cnt + ')';
+          btn.title = val;
+          btn.addEventListener('click', function() {
+            if (group.active.has(val)) group.active.delete(val);
+            else group.active.add(val);
+            btn.classList.toggle('active', group.active.has(val));
+            applyFilters();
+          });
+          grpEl.appendChild(btn);
+        });
+
+        const rem = document.createElement('button');
+        rem.className = 'prop-filter-remove';
+        rem.textContent = '✕';
+        rem.title = 'Filter entfernen';
+        rem.addEventListener('click', function() {
+          delete activePropertyFilters[prop];
+          renderPropertyFilters();
+          applyFilters();
+        });
+        grpEl.appendChild(rem);
+        bar.appendChild(grpEl);
+      });
     }
 
     // ── file path linking ─────────────────────────────────────────────────────
@@ -609,6 +777,7 @@
     const ctxPropLabel = document.getElementById('ctx-prop-label');
     const ctxAddCol    = document.getElementById('ctx-add-col');
     const ctxRemCol    = document.getElementById('ctx-rem-col');
+    const ctxAddFilter = document.getElementById('ctx-add-filter');
     let ctxProp = null;
 
     function openCtxMenu(x, y, prop) {
@@ -617,6 +786,7 @@
       const exists = customColumns.includes(prop);
       ctxAddCol.classList.toggle('disabled', exists);
       ctxRemCol.classList.toggle('disabled', !exists);
+      ctxAddFilter.classList.toggle('disabled', prop in activePropertyFilters);
       // keep menu inside viewport
       ctxMenu.classList.remove('hidden');
       const mw = ctxMenu.offsetWidth, mh = ctxMenu.offsetHeight;
@@ -638,6 +808,15 @@
       if (ctxProp) {
         customColumns = customColumns.filter(function(c) { return c !== ctxProp; });
         removeColumnFromEntries(ctxProp);
+      }
+      closeCtxMenu();
+    });
+
+    ctxAddFilter.addEventListener('click', function() {
+      if (ctxProp && !(ctxProp in activePropertyFilters)) {
+        const counts = countPropertyValues(ctxProp);
+        activePropertyFilters[ctxProp] = { counts: counts, active: new Set() };
+        renderPropertyFilters();
       }
       closeCtxMenu();
     });
@@ -989,10 +1168,7 @@
         activeFilter = btn.dataset.level;
         document.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });
         btn.classList.add('active');
-        list.querySelectorAll('.entry').forEach(function(e) {
-          e.classList.toggle('hidden', activeFilter !== 'ALL' && e.dataset.level !== activeFilter);
-        });
-        if (autoScroll) list.scrollTop = list.scrollHeight;
+        applyFilters();
       });
     });
 
@@ -1028,6 +1204,8 @@
       cntTotal.textContent = cntError.textContent = cntWarn.textContent = 0;
       empty.classList.remove('hidden');
       if (findTerm) closeFind();
+      activePropertyFilters = {};
+      renderPropertyFilters();
     });
     // ── path-mapping modal ───────────────────────────────────────────────────
 
