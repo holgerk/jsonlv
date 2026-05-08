@@ -265,6 +265,52 @@
     #empty p { font-size: 13px; }
 
     .hidden { display: none !important; }
+
+    /* ── custom columns ── */
+    .col {
+      flex-shrink: 0;
+      max-width: 160px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 11px;
+      color: var(--text-dim);
+      border-left: 1px solid var(--border);
+      padding-left: 6px;
+    }
+
+    /* ── clickable property keys in detail panel ── */
+    .prop-key { cursor: pointer; }
+    .prop-key:hover { text-decoration: underline dotted; }
+
+    /* ── context menu ── */
+    #ctx-menu {
+      position: fixed;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 4px 0;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+      z-index: 9999;
+      min-width: 170px;
+      font-size: 12px;
+    }
+    .ctx-item {
+      padding: 6px 14px;
+      cursor: pointer;
+      color: var(--text);
+      white-space: nowrap;
+    }
+    .ctx-item:hover { background: var(--border); }
+    .ctx-item.disabled { color: var(--text-faint); cursor: default; }
+    .ctx-item.disabled:hover { background: transparent; }
+    .ctx-label {
+      padding: 4px 14px 2px;
+      font-size: 10px;
+      color: var(--text-faint);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
   </style>
 </head>
 <body>
@@ -292,6 +338,12 @@
     <button class="find-btn" id="find-close" title="Schließen (Escape)">✕</button>
   </div>
 
+  <div id="ctx-menu" class="hidden">
+    <div class="ctx-label" id="ctx-prop-label"></div>
+    <div class="ctx-item" id="ctx-add-col">Spalte hinzufügen</div>
+    <div class="ctx-item" id="ctx-rem-col">Spalte entfernen</div>
+  </div>
+
   <div id="log-list">
     <div id="empty">
       <div class="icon">◎</div>
@@ -303,6 +355,7 @@
     const BATCH      = 200;
     const rawData    = new WeakMap(); // entry → raw log line string
     const sourceData = new WeakMap(); // entry → source filename
+    let customColumns = [];
 
     let domCount     = 0;
     let counts       = { total: 0, INFO: 0, WARN: 0, ERROR: 0, DEBUG: 0 };
@@ -345,14 +398,15 @@
       const src = item.s || '';
       const raw = item.d;
       let level = '', service = '', message = raw, ts = '', meta = '';
+      let parsedObj = null;
       try {
-        const o = JSON.parse(raw);
-        level   = (o.level_name || o.level || '').toUpperCase();
-        service = o.channel || o.service || o.logger || '';
-        message = o.message || o.msg || o.error || raw;
-        ts      = fmtTime(o.datetime || o.timestamp || o.time || o['@timestamp'] || '');
-        const dur = o.duration_ms != null ? o.duration_ms + 'ms' : '';
-        const st  = o.status_code  != null ? String(o.status_code) : '';
+        parsedObj = JSON.parse(raw);
+        level   = (parsedObj.level_name || parsedObj.level || '').toUpperCase();
+        service = parsedObj.channel || parsedObj.service || parsedObj.logger || '';
+        message = parsedObj.message || parsedObj.msg || parsedObj.error || raw;
+        ts      = fmtTime(parsedObj.datetime || parsedObj.timestamp || parsedObj.time || parsedObj['@timestamp'] || '');
+        const dur = parsedObj.duration_ms != null ? parsedObj.duration_ms + 'ms' : '';
+        const st  = parsedObj.status_code  != null ? String(parsedObj.status_code) : '';
         meta = [dur, st].filter(Boolean).join(' · ');
         if (counts[level] !== undefined) counts[level]++;
       } catch (_) {}
@@ -362,19 +416,24 @@
       el.className = 'entry' + (level ? '' : ' plain');
       el.dataset.level = level;
       if (activeFilter !== 'ALL' && level !== activeFilter) el.classList.add('hidden');
+      const colsHtml = customColumns.map(function(prop) {
+        const v = parsedObj && parsedObj[prop] !== undefined ? String(parsedObj[prop]) : '';
+        const display = v.length > 35 ? v.slice(0, 35) + '…' : v;
+        return '<span class="col" data-col="' + esc(prop) + '" title="' + esc(prop + ': ' + v) + '">' + esc(display) + '</span>';
+      }).join('');
+
       el.innerHTML =
         '<span class="ts">'                        + esc(ts)         + '</span>' +
         '<span class="badge ' + esc(level) + '">'  + esc(level||'—') + '</span>' +
         (src ? '<span class="src">' + esc(src) + '</span>' : '') +
         '<span class="svc">'                       + esc(service)    + '</span>' +
+        colsHtml +
         '<span class="msg">'                       + esc(message)    + '</span>' +
         (meta ? '<span class="meta">' + esc(meta) + '</span>' : '');
       rawData.set(el, raw);
       sourceData.set(el, src);
       return el;
     }
-
-    // ── details expand ────────────────────────────────────────────────────────
 
     function syntaxHighlight(obj) {
       const s = JSON.stringify(obj, null, 2)
@@ -389,6 +448,20 @@
         });
     }
 
+    function annotateTopLevelKeys(pre) {
+      pre.querySelectorAll('.jk').forEach(function(span) {
+        const prev = span.previousSibling;
+        if (!prev || prev.nodeType !== Node.TEXT_NODE) return;
+        const text  = prev.textContent;
+        const after = text.slice(text.lastIndexOf('\n') + 1);
+        if (after !== '  ') return; // only top-level (2-space indent)
+        const raw   = span.textContent;                    // e.g. "userId":
+        const name  = raw.slice(1, raw.lastIndexOf('"'));  // userId
+        span.classList.add('prop-key');
+        span.dataset.prop = name;
+      });
+    }
+
     function buildDetailsPanel(raw, src) {
       const panel = document.createElement('div');
       panel.className = 'details';
@@ -397,13 +470,91 @@
         const obj = JSON.parse(raw);
         if (src) obj._source = src;
         pre.innerHTML = syntaxHighlight(obj);
+        annotateTopLevelKeys(pre);
       } catch (_) { pre.textContent = raw; }
       panel.appendChild(pre);
       return panel;
     }
 
+    // ── context menu ─────────────────────────────────────────────────────────
+
+    const ctxMenu      = document.getElementById('ctx-menu');
+    const ctxPropLabel = document.getElementById('ctx-prop-label');
+    const ctxAddCol    = document.getElementById('ctx-add-col');
+    const ctxRemCol    = document.getElementById('ctx-rem-col');
+    let ctxProp = null;
+
+    function openCtxMenu(x, y, prop) {
+      ctxProp = prop;
+      ctxPropLabel.textContent = prop;
+      const exists = customColumns.includes(prop);
+      ctxAddCol.classList.toggle('disabled', exists);
+      ctxRemCol.classList.toggle('disabled', !exists);
+      // keep menu inside viewport
+      ctxMenu.classList.remove('hidden');
+      const mw = ctxMenu.offsetWidth, mh = ctxMenu.offsetHeight;
+      ctxMenu.style.left = Math.min(x, window.innerWidth  - mw - 8) + 'px';
+      ctxMenu.style.top  = Math.min(y, window.innerHeight - mh - 8) + 'px';
+    }
+
+    function closeCtxMenu() { ctxMenu.classList.add('hidden'); }
+
+    ctxAddCol.addEventListener('click', function() {
+      if (ctxProp && !customColumns.includes(ctxProp)) {
+        customColumns.push(ctxProp);
+        addColumnToEntries(ctxProp);
+      }
+      closeCtxMenu();
+    });
+
+    ctxRemCol.addEventListener('click', function() {
+      if (ctxProp) {
+        customColumns = customColumns.filter(function(c) { return c !== ctxProp; });
+        removeColumnFromEntries(ctxProp);
+      }
+      closeCtxMenu();
+    });
+
+    document.addEventListener('click', function(e) {
+      if (!ctxMenu.contains(e.target)) closeCtxMenu();
+    });
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') closeCtxMenu();
+    });
+
+    function addColumnToEntries(prop) {
+      list.querySelectorAll('.entry').forEach(function(entry) {
+        const raw = rawData.get(entry);
+        let v = '';
+        try { const o = JSON.parse(raw); if (o[prop] !== undefined) v = String(o[prop]); } catch(_) {}
+        const display = v.length > 35 ? v.slice(0, 35) + '…' : v;
+        const span = document.createElement('span');
+        span.className = 'col';
+        span.dataset.col = prop;
+        span.title = prop + ': ' + v;
+        span.textContent = display;
+        const msg = entry.querySelector('.msg');
+        if (msg) entry.insertBefore(span, msg);
+      });
+    }
+
+    function removeColumnFromEntries(prop) {
+      list.querySelectorAll('.entry .col[data-col="' + prop + '"]').forEach(function(s) { s.remove(); });
+    }
+
+    // ── details expand ────────────────────────────────────────────────────────
+
     list.addEventListener('click', function(e) {
       if (window.getSelection().toString()) return;
+
+      // Property key click → context menu
+      const propKey = e.target.closest('.prop-key');
+      if (propKey) {
+        e.stopPropagation();
+        openCtxMenu(e.clientX, e.clientY, propKey.dataset.prop);
+        return;
+      }
+
       const entry = e.target.closest('.entry');
       if (!entry) return;
 
