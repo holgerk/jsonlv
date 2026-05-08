@@ -111,7 +111,6 @@
       padding: 3px 14px;
       border-bottom: 1px solid transparent;
       line-height: 1.6;
-      animation: fadein 0.15s ease;
     }
     .entry:hover { background: #161b22; }
 
@@ -179,15 +178,21 @@
   </div>
 
   <script>
-    let counts = { total: 0, ERROR: 0, WARN: 0 };
+    const MAX_DOM  = 2000;
+    const BATCH    = 200;
+
+    let domCount   = 0;
+    let counts     = { total: 0, ERROR: 0, WARN: 0 };
     let activeFilter = 'ALL';
     let autoScroll = true;
+    let rafPending = false;
+    const queue    = [];
 
-    const list      = document.getElementById('log-list');
-    const empty     = document.getElementById('empty');
-    const cntTotal  = document.getElementById('cnt-total');
-    const cntError  = document.getElementById('cnt-error');
-    const cntWarn   = document.getElementById('cnt-warn');
+    const list     = document.getElementById('log-list');
+    const empty    = document.getElementById('empty');
+    const cntTotal = document.getElementById('cnt-total');
+    const cntError = document.getElementById('cnt-error');
+    const cntWarn  = document.getElementById('cnt-warn');
 
     function fmtTime(ts) {
       if (!ts) return '';
@@ -196,56 +201,70 @@
       return d.toTimeString().slice(0, 8) + '.' + String(d.getMilliseconds()).padStart(3, '0');
     }
 
-    function addLog(raw) {
-      empty.classList.add('hidden');
-      counts.total++;
-      cntTotal.textContent = counts.total;
+    function esc(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
 
-      let entry, level = '', service = '', message = raw, ts = '', duration = '', status = '';
+    function buildEntry(raw) {
+      let level = '', service = '', message = raw, ts = '', meta = '';
       try {
         const o = JSON.parse(raw);
-        level    = (o.level || '').toUpperCase();
-        service  = o.service || o.logger || '';
-        message  = o.message || o.msg || o.error || raw;
-        ts       = fmtTime(o.timestamp || o.time || o['@timestamp'] || '');
-        duration = o.duration_ms != null ? o.duration_ms + 'ms' : '';
-        status   = o.status_code  != null ? String(o.status_code)  : '';
+        level   = (o.level_name || o.level || '').toUpperCase();
+        service = o.channel || o.service || o.logger || '';
+        message = o.message || o.msg || o.error || raw;
+        ts      = fmtTime(o.datetime || o.timestamp || o.time || o['@timestamp'] || '');
+        const dur = o.duration_ms != null ? o.duration_ms + 'ms' : '';
+        const st  = o.status_code  != null ? String(o.status_code) : '';
+        meta = [dur, st].filter(Boolean).join(' · ');
+        if (level === 'ERROR') counts.ERROR++;
+        if (level === 'WARN')  counts.WARN++;
+      } catch (_) {}
+      counts.total++;
 
-        if (level === 'ERROR') { counts.ERROR++; cntError.textContent = counts.ERROR; }
-        if (level === 'WARN')  { counts.WARN++;  cntWarn.textContent  = counts.WARN;  }
+      const el = document.createElement('div');
+      el.className = 'entry' + (level ? '' : ' plain');
+      el.dataset.level = level;
+      if (activeFilter !== 'ALL' && level !== activeFilter) el.classList.add('hidden');
+      el.innerHTML =
+        '<span class="ts">'                             + esc(ts)          + '</span>' +
+        '<span class="badge ' + esc(level) + '">'      + esc(level||'—')  + '</span>' +
+        '<span class="svc">'                            + esc(service)     + '</span>' +
+        '<span class="msg">'                            + esc(message)     + '</span>' +
+        (meta ? '<span class="meta">' + esc(meta) + '</span>' : '');
+      return el;
+    }
 
-        const meta = [duration, status].filter(Boolean).join(' · ');
+    function drainQueue() {
+      rafPending = false;
+      if (!queue.length) return;
 
-        entry = document.createElement('div');
-        entry.className = 'entry';
-        entry.dataset.level = level;
-        entry.innerHTML =
-          '<span class="ts">'  + esc(ts)      + '</span>' +
-          '<span class="badge ' + esc(level) + '">' + esc(level || '—') + '</span>' +
-          '<span class="svc">' + esc(service)  + '</span>' +
-          '<span class="msg">' + esc(message)  + '</span>' +
-          (meta ? '<span class="meta">' + esc(meta) + '</span>' : '');
-      } catch (_) {
-        entry = document.createElement('div');
-        entry.className = 'entry plain';
-        entry.innerHTML = '<span class="msg">' + esc(raw) + '</span>';
+      empty.classList.add('hidden');
+      const n   = Math.min(BATCH, queue.length);
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < n; i++) frag.appendChild(buildEntry(queue[i]));
+      queue.splice(0, n);
+      domCount += n;
+
+      list.appendChild(frag);
+
+      while (domCount > MAX_DOM) {
+        const el = list.querySelector('.entry');
+        if (el) { el.remove(); domCount--; } else break;
       }
 
-      if (activeFilter !== 'ALL' && level !== activeFilter) {
-        entry.classList.add('hidden');
-      }
-
-      list.appendChild(entry);
+      cntTotal.textContent = counts.total;
+      cntError.textContent = counts.ERROR;
+      cntWarn.textContent  = counts.WARN;
       if (autoScroll) list.scrollTop = list.scrollHeight;
+
+      if (queue.length) { rafPending = true; requestAnimationFrame(drainQueue); }
     }
 
-    function esc(s) {
-      return String(s)
-        .replace(/&/g,'&amp;')
-        .replace(/</g,'&lt;')
-        .replace(/>/g,'&gt;')
-        .replace(/"/g,'&quot;');
-    }
+    const es = new EventSource('/events');
+    es.onmessage = function(e) {
+      queue.push(e.data);
+      if (!rafPending) { rafPending = true; requestAnimationFrame(drainQueue); }
+    };
 
     // Filter buttons
     document.querySelectorAll('.filter-btn').forEach(btn => {
@@ -253,28 +272,22 @@
         activeFilter = btn.dataset.level;
         document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        document.querySelectorAll('.entry').forEach(e => {
-          if (activeFilter === 'ALL' || e.dataset.level === activeFilter || e.classList.contains('plain') && activeFilter === 'ALL') {
-            e.classList.remove('hidden');
-          } else {
-            e.classList.add('hidden');
-          }
+        list.querySelectorAll('.entry').forEach(e => {
+          e.classList.toggle('hidden', activeFilter !== 'ALL' && e.dataset.level !== activeFilter);
         });
       });
     });
 
-    // Auto-scroll toggle
     const asBtn = document.getElementById('autoscroll-btn');
     asBtn.addEventListener('click', () => {
       autoScroll = !autoScroll;
       asBtn.classList.toggle('on', autoScroll);
-      asBtn.textContent = autoScroll ? '⬇ Auto-scroll' : '⬇ Auto-scroll';
       if (autoScroll) list.scrollTop = list.scrollHeight;
     });
 
-    // Clear
     document.getElementById('clear-btn').addEventListener('click', () => {
-      document.querySelectorAll('#log-list .entry').forEach(e => e.remove());
+      list.querySelectorAll('.entry').forEach(e => e.remove());
+      domCount = 0;
       counts = { total: 0, ERROR: 0, WARN: 0 };
       cntTotal.textContent = cntError.textContent = cntWarn.textContent = 0;
       empty.classList.remove('hidden');
