@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"time"
 
 	webview "github.com/webview/webview_go"
 )
@@ -94,10 +95,16 @@ func main() {
 		}
 		flusher.Flush()
 
+		heartbeat := time.NewTicker(30 * time.Second)
+		defer heartbeat.Stop()
+
 		for {
 			select {
 			case line := <-ch:
 				fmt.Fprintf(w, "data: %s\n\n", line)
+				flusher.Flush()
+			case <-heartbeat.C:
+				fmt.Fprintf(w, ": keep-alive\n\n")
 				flusher.Flush()
 			case <-r.Context().Done():
 				return
