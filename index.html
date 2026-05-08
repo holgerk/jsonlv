@@ -64,22 +64,6 @@
       margin-right: 4px;
     }
 
-    .stat {
-      font-size: 11px;
-      color: var(--text-dim);
-      padding: 2px 8px;
-      background: var(--bg-btn);
-      border-radius: 12px;
-      border: 1px solid var(--border);
-    }
-    .stat span { font-weight: 600; }
-    .stat.errors span { color: #f85149; }
-    .stat.warns  span { color: #e3b341; }
-    .stat.total  span { color: #79c0ff; }
-    body.light .stat.total span { color: #0969da; }
-
-    .sep { width: 1px; height: 18px; background: var(--border); }
-
     .filter-btn {
       font-family: inherit;
       font-size: 11px;
@@ -412,10 +396,6 @@
 <body class="light">
   <div id="toolbar">
     <h1>Log Viewer</h1>
-    <div class="stat total">Total <span id="cnt-total">0</span></div>
-    <div class="stat errors">ERR <span id="cnt-error">0</span></div>
-    <div class="stat warns">WARN <span id="cnt-warn">0</span></div>
-    <div class="sep"></div>
     <button class="filter-btn active" data-level="ALL">All</button>
     <button class="filter-btn INFO"     data-level="INFO">INFO</button>
     <button class="filter-btn WARN"     data-level="WARN">WARN</button>
@@ -490,9 +470,6 @@
 
     const list       = document.getElementById('log-list');
     const empty      = document.getElementById('empty');
-    const cntTotal   = document.getElementById('cnt-total');
-    const cntError   = document.getElementById('cnt-error');
-    const cntWarn    = document.getElementById('cnt-warn');
     const findBar    = document.getElementById('find-bar');
     const findInput  = document.getElementById('find-input');
     const findStatus = document.getElementById('find-status');
@@ -950,9 +927,6 @@
       domCount += n;
       list.appendChild(frag);
 
-      cntTotal.textContent = counts.total;
-      cntError.textContent = counts.ERROR;
-      cntWarn.textContent  = counts.WARN;
       updateFilterCounts();
       if (autoScroll) list.scrollTop = list.scrollHeight;
       if (queue.length) { rafPending = true; requestAnimationFrame(drainQueue); }
@@ -1201,7 +1175,6 @@
       domCount = 0;
       counts   = { total: 0, INFO: 0, WARN: 0, ERROR: 0, CRITICAL: 0, DEBUG: 0 };
       updateFilterCounts();
-      cntTotal.textContent = cntError.textContent = cntWarn.textContent = 0;
       empty.classList.remove('hidden');
       if (findTerm) closeFind();
       activePropertyFilters = {};
