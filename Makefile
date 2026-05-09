@@ -29,6 +29,10 @@ app: build
 install: app
 	rm -rf /Applications/$(APP)
 	cp -r $(APP) /Applications/$(APP)
+	@printf '#!/bin/sh\nexec /Applications/$(APP)/Contents/MacOS/$(BINARY) "$$@"\n' \
+		> $(INSTALL_DIR)/$(BINARY)
+	chmod +x $(INSTALL_DIR)/$(BINARY)
+	@echo "Installed: /Applications/$(APP)  and  $(INSTALL_DIR)/$(BINARY)"
 
 clean:
 	rm -rf $(BINARY) $(APP)
