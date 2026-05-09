@@ -915,6 +915,33 @@
 
     // ── queue drain ───────────────────────────────────────────────────────────
 
+    function applyFindToNewEntries(entries) {
+      if (!findTerm) return;
+      const lterm = findTerm.toLowerCase();
+      let changed = false;
+      entries.forEach(function(entry) {
+        if (entry.classList.contains('hidden')) return;
+        markTextNodes(entry.querySelector('.msg'), lterm, findTerm);
+        markTextNodes(entry.querySelector('.svc'), lterm, findTerm);
+        markTextNodes(entry.querySelector('.ts'),  lterm, findTerm);
+        const raw = rawData.get(entry);
+        if (raw && raw.toLowerCase().includes(lterm)) {
+          if (!entry.nextElementSibling || !entry.nextElementSibling.classList.contains('details')) {
+            const panel = buildDetailsPanel(raw, sourceData.get(entry));
+            panel.dataset.auto = '1';
+            entry.after(panel);
+            entry.classList.add('expanded');
+            markTextNodes(panel.querySelector('pre'), lterm, findTerm);
+          }
+          changed = true;
+        }
+      });
+      if (changed) {
+        findMatches = Array.from(list.querySelectorAll('mark'));
+        updateFindStatus();
+      }
+    }
+
     function drainQueue() {
       rafPending = false;
       if (!queue.length) return;
@@ -922,12 +949,18 @@
       empty.classList.add('hidden');
       const n    = Math.min(BATCH, queue.length);
       const frag = document.createDocumentFragment();
-      for (let i = 0; i < n; i++) frag.appendChild(buildEntry(queue[i]));
+      const newEntries = [];
+      for (let i = 0; i < n; i++) {
+        const el = buildEntry(queue[i]);
+        newEntries.push(el);
+        frag.appendChild(el);
+      }
       queue.splice(0, n);
       domCount += n;
       list.appendChild(frag);
 
       updateFilterCounts();
+      applyFindToNewEntries(newEntries);
       if (autoScroll) list.scrollTop = list.scrollHeight;
       if (queue.length) { rafPending = true; requestAnimationFrame(drainQueue); }
     }
