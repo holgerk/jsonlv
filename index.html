@@ -500,9 +500,21 @@
       let parsedObj = null;
       try {
         parsedObj = JSON.parse(raw);
-        level   = (parsedObj.level_name || parsedObj.level || '').toUpperCase();
-        if (level === 'WARNING') level = 'WARN';
-        service = parsedObj.channel || parsedObj.service || parsedObj.logger || '';
+        let rawLevel = parsedObj.level_name || parsedObj.dd_status || parsedObj.level || '';
+        if (typeof rawLevel === 'number') {
+          if      (rawLevel >= 60) rawLevel = 'CRITICAL';
+          else if (rawLevel >= 50) rawLevel = 'ERROR';
+          else if (rawLevel >= 40) rawLevel = 'WARN';
+          else if (rawLevel >= 30) rawLevel = 'INFO';
+          else                     rawLevel = 'DEBUG';
+        } else {
+          rawLevel = String(rawLevel).toUpperCase();
+          if (rawLevel === 'WARNING') rawLevel = 'WARN';
+          if (rawLevel === 'FATAL')   rawLevel = 'CRITICAL';
+        }
+        level   = rawLevel;
+        service = parsedObj.channel || parsedObj.service || parsedObj.logger ||
+                  (parsedObj.dd && parsedObj.dd.service) || '';
         message = parsedObj.message || parsedObj.msg || parsedObj.error || raw;
         ts      = fmtTime(parsedObj.datetime || parsedObj.timestamp || parsedObj.time || parsedObj['@timestamp'] || '');
         const dur = parsedObj.duration_ms != null ? parsedObj.duration_ms + 'ms' : '';
