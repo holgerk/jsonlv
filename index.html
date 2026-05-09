@@ -1255,7 +1255,7 @@
     // ── clear ─────────────────────────────────────────────────────────────────
 
     document.getElementById('clear-btn').addEventListener('click', function() {
-      list.querySelectorAll('.entry').forEach(function(e) { e.remove(); });
+      list.querySelectorAll('.entry, .details').forEach(function(e) { e.remove(); });
       domCount = 0;
       counts   = { total: 0, INFO: 0, WARN: 0, ERROR: 0, CRITICAL: 0, DEBUG: 0 };
       updateFilterCounts();
