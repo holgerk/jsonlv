@@ -391,6 +391,7 @@
       text-transform: uppercase;
       letter-spacing: 0.08em;
     }
+    .ctx-sep { height: 1px; background: var(--border); margin: 4px 0; }
   </style>
 </head>
 <body class="light">
@@ -417,6 +418,9 @@
 
   <div id="ctx-menu" class="hidden">
     <div class="ctx-label" id="ctx-prop-label"></div>
+    <div class="ctx-item" id="ctx-copy-val">Wert kopieren</div>
+    <div class="ctx-item" id="ctx-copy-json">Als JSON kopieren</div>
+    <div class="ctx-sep"></div>
     <div class="ctx-item" id="ctx-add-col">Spalte hinzufügen</div>
     <div class="ctx-item" id="ctx-rem-col">Spalte entfernen</div>
     <div class="ctx-item" id="ctx-add-filter">Filter hinzufügen</div>
@@ -752,14 +756,30 @@
 
     const ctxMenu      = document.getElementById('ctx-menu');
     const ctxPropLabel = document.getElementById('ctx-prop-label');
+    const ctxCopyVal   = document.getElementById('ctx-copy-val');
+    const ctxCopyJson  = document.getElementById('ctx-copy-json');
     const ctxAddCol    = document.getElementById('ctx-add-col');
     const ctxRemCol    = document.getElementById('ctx-rem-col');
     const ctxAddFilter = document.getElementById('ctx-add-filter');
     let ctxProp = null;
+    let ctxPropValue = undefined;
 
-    function openCtxMenu(x, y, prop) {
+    function openCtxMenu(x, y, prop, entry) {
       ctxProp = prop;
+      ctxPropValue = undefined;
+      if (entry) {
+        if (prop === '_source') {
+          ctxPropValue = sourceData.get(entry) || '';
+        } else {
+          try {
+            ctxPropValue = getNestedValue(JSON.parse(rawData.get(entry)), prop);
+          } catch(_) {}
+        }
+      }
       ctxPropLabel.textContent = prop;
+      const hasVal = ctxPropValue !== undefined;
+      ctxCopyVal.classList.toggle('disabled', !hasVal);
+      ctxCopyJson.classList.toggle('disabled', !hasVal);
       const exists = customColumns.includes(prop);
       ctxAddCol.classList.toggle('disabled', exists);
       ctxRemCol.classList.toggle('disabled', !exists);
@@ -772,6 +792,23 @@
     }
 
     function closeCtxMenu() { ctxMenu.classList.add('hidden'); }
+
+    ctxCopyVal.addEventListener('click', function() {
+      if (ctxPropValue !== undefined) {
+        const text = (ctxPropValue !== null && typeof ctxPropValue === 'object')
+          ? JSON.stringify(ctxPropValue)
+          : String(ctxPropValue);
+        navigator.clipboard.writeText(text);
+      }
+      closeCtxMenu();
+    });
+
+    ctxCopyJson.addEventListener('click', function() {
+      if (ctxPropValue !== undefined) {
+        navigator.clipboard.writeText(JSON.stringify(ctxPropValue, null, 2));
+      }
+      closeCtxMenu();
+    });
 
     ctxAddCol.addEventListener('click', function() {
       if (ctxProp && !customColumns.includes(ctxProp)) {
@@ -887,7 +924,9 @@
       const propKey = e.target.closest('.prop-key');
       if (propKey) {
         e.stopPropagation();
-        openCtxMenu(e.clientX, e.clientY, propKey.dataset.prop);
+        const details = propKey.closest('.details');
+        const entry = details ? details.previousElementSibling : null;
+        openCtxMenu(e.clientX, e.clientY, propKey.dataset.prop, entry);
         return;
       }
 
