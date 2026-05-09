@@ -57,6 +57,7 @@ extern void cMenuOpenFiles(void);
 extern void cOpenFile(const char *path);
 extern void cClearRecent(void);
 extern void cRestartApp(void);
+extern void cSaveWindowFrame(CGFloat x, CGFloat y, CGFloat w, CGFloat h);
 
 // ── File menu handler ─────────────────────────────────────────────────────────
 
@@ -119,6 +120,25 @@ void setupFileMenu(const char *recentNL) {
     [recentItem setSubmenu:gRecentMenu];
 
     rebuildRecentMenuC(recentNL);
+}
+
+// ── App delegate (saves window frame on quit) ─────────────────────────────────
+
+@interface JSONLVAppDelegate : NSObject <NSApplicationDelegate>
+@property (nonatomic, assign) NSWindow *window;
+@end
+@implementation JSONLVAppDelegate
+- (void)applicationWillTerminate:(NSNotification *)n {
+    NSRect f = self.window.frame;
+    cSaveWindowFrame(f.origin.x, f.origin.y, f.size.width, f.size.height);
+}
+@end
+static JSONLVAppDelegate *gAppDelegate = nil;
+
+void installAppDelegate(void *winPtr) {
+    gAppDelegate = [JSONLVAppDelegate new];
+    gAppDelegate.window = (__bridge NSWindow*)winPtr;
+    [NSApp setDelegate:gAppDelegate];
 }
 
 // ── Window geometry ───────────────────────────────────────────────────────────
@@ -256,6 +276,10 @@ func RebuildRecentMenu(recent []string) {
 	cs := C.CString(strings.Join(recent, "\n"))
 	defer C.free(unsafe.Pointer(cs))
 	C.rebuildRecentMenuC(cs)
+}
+
+func InstallAppDelegate(winPtr unsafe.Pointer) {
+	C.installAppDelegate(winPtr)
 }
 
 func GetWindowFrame(winPtr unsafe.Pointer) (x, y, w, h float64) {

@@ -4,7 +4,7 @@ package main
 // CGO rule: files with //export must not have C definitions in their preamble.
 
 /*
-// (declarations only)
+#include <CoreGraphics/CoreGraphics.h>
 */
 import "C"
 
@@ -35,4 +35,9 @@ func cRestartApp() {
 	case menuFileCh <- "restart":
 	default:
 	}
+}
+
+//export cSaveWindowFrame
+func cSaveWindowFrame(x, y, w, h C.CGFloat) {
+	setWindowPref(float64(x), float64(y), float64(w), float64(h))
 }

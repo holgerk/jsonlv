@@ -318,6 +318,13 @@ func main() {
 				clearRecent()
 				wv.Dispatch(func() { RebuildRecentMenu(nil) })
 			case "restart":
+				ch := make(chan [4]float64, 1)
+				wv.Dispatch(func() {
+					x, y, w, h := GetWindowFrame(wv.Window())
+					ch <- [4]float64{x, y, w, h}
+				})
+				frame := <-ch
+				setWindowPref(frame[0], frame[1], frame[2], frame[3])
 				restartApp()
 			default:
 				startTailing(action)
@@ -336,15 +343,21 @@ func main() {
 	}
 	wv.SetSize(int(savedW), int(savedH), webview.HintNone)
 
-	wv.Bind("nativeQuit", func() { os.Exit(0) }) //nolint:errcheck
+	wv.Bind("nativeQuit", func() { //nolint:errcheck
+		x, y, w, h := GetWindowFrame(wv.Window())
+		setWindowPref(x, y, w, h)
+		os.Exit(0)
+	})
 	wv.Navigate(fmt.Sprintf("http://127.0.0.1:%d", port))
 
-	// Restore saved window position (after Navigate so the window exists).
-	if prefs.Window.X != 0 || prefs.Window.Y != 0 {
-		wv.Dispatch(func() {
-			SetWindowFrame(wv.Window(), prefs.Window.X, prefs.Window.Y, savedW, savedH)
-		})
-	}
+	// Restore saved window position and install quit delegate (window exists after Navigate).
+	wv.Dispatch(func() {
+		winPtr := wv.Window()
+		if prefs.Window.X != 0 || prefs.Window.Y != 0 {
+			SetWindowFrame(winPtr, prefs.Window.X, prefs.Window.Y, savedW, savedH)
+		}
+		InstallAppDelegate(winPtr)
+	})
 
 	// Ask to reopen recent files when launched without arguments and not piped.
 	if len(files) == 0 && !piped && len(recent) > 0 {
@@ -359,24 +372,6 @@ func main() {
 			}
 		}()
 	}
-
-	// Poll window frame every 2 s and persist changes.
-	go func() {
-		ticker := time.NewTicker(2 * time.Second)
-		var last [4]float64
-		for range ticker.C {
-			ch := make(chan [4]float64, 1)
-			wv.Dispatch(func() {
-				x, y, w, h := GetWindowFrame(wv.Window())
-				ch <- [4]float64{x, y, w, h}
-			})
-			frame := <-ch
-			if frame != last && frame[2] >= 640 && frame[3] >= 400 {
-				last = frame
-				setWindowPref(frame[0], frame[1], frame[2], frame[3])
-			}
-		}
-	}()
 
 	wv.Run()
 }
