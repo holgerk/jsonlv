@@ -1223,13 +1223,19 @@
     function applyTheme(name) {
       document.body.classList.remove(...THEMES);
       if (name !== 'dark') document.body.classList.add(name);
-      localStorage.setItem('theme', name);
       document.querySelectorAll('input[name="theme"]').forEach(function(r) {
         r.checked = r.value === name;
       });
+      fetch('/set-theme', { method: 'POST', body: name });
     }
 
-    applyTheme(localStorage.getItem('theme') || 'light');
+    // Initialize radio state from server-injected body class.
+    (function() {
+      var active = THEMES.find(function(t) { return document.body.classList.contains(t); }) || 'dark';
+      document.querySelectorAll('input[name="theme"]').forEach(function(r) {
+        r.checked = r.value === active;
+      });
+    })();
 
     const settingsBtn = document.getElementById('settings-btn');
     const settingsPanel = document.getElementById('settings-panel');

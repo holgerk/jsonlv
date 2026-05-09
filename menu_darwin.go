@@ -56,6 +56,7 @@ void setupAppIcon() {
 extern void cMenuOpenFiles(void);
 extern void cOpenFile(const char *path);
 extern void cClearRecent(void);
+extern void cRestartApp(void);
 
 // ── File menu handler ─────────────────────────────────────────────────────────
 
@@ -66,6 +67,7 @@ extern void cClearRecent(void);
 - (void)doOpen:(id)sender     { cMenuOpenFiles(); }
 - (void)doOpenFile:(id)sender { cOpenFile([self.filePath UTF8String]); }
 - (void)doClear:(id)sender    { cClearRecent(); }
+- (void)doRestart:(id)sender  { cRestartApp(); }
 @end
 
 static JSONLVMenuHandler *gMenuHandler = nil;
@@ -119,6 +121,34 @@ void setupFileMenu(const char *recentNL) {
     rebuildRecentMenuC(recentNL);
 }
 
+// ── Window geometry ───────────────────────────────────────────────────────────
+
+void getWindowFrame(void *winPtr, CGFloat *x, CGFloat *y, CGFloat *w, CGFloat *h) {
+    NSWindow *win = (__bridge NSWindow*)winPtr;
+    NSRect f = win.frame;
+    *x = f.origin.x;
+    *y = f.origin.y;
+    *w = f.size.width;
+    *h = f.size.height;
+}
+
+void setWindowFrame(void *winPtr, CGFloat x, CGFloat y, CGFloat w, CGFloat h) {
+    NSWindow *win = (__bridge NSWindow*)winPtr;
+    [win setFrame:NSMakeRect(x, y, w, h) display:YES animate:NO];
+}
+
+// ── Reopen alert ──────────────────────────────────────────────────────────────
+
+int showReopenAlert(int count) {
+    NSAlert *alert = [NSAlert new];
+    alert.messageText = @"Letzte Sitzung wiederherstellen?";
+    alert.informativeText = [NSString stringWithFormat:
+        @"%d zuletzt geöffnete Datei(en) erneut laden?", count];
+    [alert addButtonWithTitle:@"Öffnen"];
+    [alert addButtonWithTitle:@"Überspringen"];
+    return ([alert runModal] == NSAlertFirstButtonReturn) ? 1 : 0;
+}
+
 // ── File pickers ──────────────────────────────────────────────────────────────
 
 char* openMultipleFilesPicker(void) {
@@ -158,6 +188,14 @@ void setupAppMenu() {
     NSMenu *appMenu = [NSMenu new];
     [appItem setSubmenu:appMenu];
     NSString *name = [[NSProcessInfo processInfo] processName];
+
+    JSONLVMenuHandler *appHandler = [JSONLVMenuHandler new];
+    NSMenuItem *restartItem = [[NSMenuItem alloc]
+        initWithTitle:@"Neu starten" action:@selector(doRestart:) keyEquivalent:@"r"];
+    restartItem.target = appHandler;
+    [appMenu addItem:restartItem];
+    [appMenu addItem:[NSMenuItem separatorItem]];
+
     [appMenu addItemWithTitle:[@"Quit " stringByAppendingString:name]
                        action:@selector(terminate:)
                 keyEquivalent:@"q"];
@@ -218,4 +256,18 @@ func RebuildRecentMenu(recent []string) {
 	cs := C.CString(strings.Join(recent, "\n"))
 	defer C.free(unsafe.Pointer(cs))
 	C.rebuildRecentMenuC(cs)
+}
+
+func GetWindowFrame(winPtr unsafe.Pointer) (x, y, w, h float64) {
+	var cx, cy, cw, ch C.CGFloat
+	C.getWindowFrame(winPtr, &cx, &cy, &cw, &ch)
+	return float64(cx), float64(cy), float64(cw), float64(ch)
+}
+
+func SetWindowFrame(winPtr unsafe.Pointer, x, y, w, h float64) {
+	C.setWindowFrame(winPtr, C.CGFloat(x), C.CGFloat(y), C.CGFloat(w), C.CGFloat(h))
+}
+
+func ShowReopenAlert(count int) bool {
+	return C.showReopenAlert(C.int(count)) == 1
 }

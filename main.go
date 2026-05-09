@@ -6,13 +6,16 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	webview "github.com/webview/webview_go"
@@ -110,8 +113,40 @@ func startTailing(path string) {
 	}()
 }
 
+func restartApp() {
+	exe, err := os.Executable()
+	if err != nil {
+		exe = os.Args[0]
+	}
+	syscall.Exec(exe, os.Args, os.Environ()) //nolint:errcheck
+}
+
+// stdinIsPiped reports whether stdin is a pipe (not a terminal).
+func stdinIsPiped() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) == 0
+}
+
+func serveHTML() string {
+	prefsMu.Lock()
+	theme := curPrefs.Theme
+	prefsMu.Unlock()
+	if theme == "light" || theme == "solarized" {
+		return strings.Replace(htmlContent, "<body>", `<body class="`+theme+`">`, 1)
+	}
+	return htmlContent
+}
+
 func main() {
 	initMappings()
+
+	prefs := loadPrefs()
+	prefsMu.Lock()
+	curPrefs = prefs
+	prefsMu.Unlock()
 
 	follow := flag.Bool("f", false, "follow file(s) for new lines")
 	lines := flag.Int("n", 1000, "number of lines from end of file")
@@ -121,7 +156,9 @@ func main() {
 	b := newBroker()
 	globalBroker = b
 
-	if len(files) == 0 {
+	piped := stdinIsPiped()
+
+	if len(files) == 0 && piped {
 		// Read from stdin
 		go func() {
 			scanner := bufio.NewScanner(os.Stdin)
@@ -156,7 +193,24 @@ func main() {
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(w, htmlContent)
+		fmt.Fprint(w, serveHTML())
+	})
+
+	mux.HandleFunc("/prefs", func(w http.ResponseWriter, r *http.Request) {
+		prefsMu.Lock()
+		p := curPrefs
+		prefsMu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(p) //nolint:errcheck
+	})
+
+	mux.HandleFunc("/set-theme", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		theme := strings.TrimSpace(string(body))
+		if theme == "dark" || theme == "light" || theme == "solarized" {
+			setThemePref(theme)
+		}
+		w.WriteHeader(http.StatusNoContent)
 	})
 
 	mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
@@ -242,7 +296,8 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "local": local}) //nolint:errcheck
 	})
 
-	SetupFileMenu(loadRecent())
+	recent := loadRecent()
+	SetupFileMenu(recent)
 
 	go func() {
 		for action := range menuFileCh {
@@ -262,6 +317,8 @@ func main() {
 			case "clear":
 				clearRecent()
 				wv.Dispatch(func() { RebuildRecentMenu(nil) })
+			case "restart":
+				restartApp()
 			default:
 				startTailing(action)
 				recent := addRecent([]string{action})
@@ -271,8 +328,55 @@ func main() {
 	}()
 
 	wv.SetTitle("Log Viewer")
-	wv.SetSize(1280, 800, webview.HintNone)
+
+	// Restore saved window size, or use default.
+	savedW, savedH := prefs.Window.W, prefs.Window.H
+	if savedW < 640 || savedH < 400 {
+		savedW, savedH = 1280, 800
+	}
+	wv.SetSize(int(savedW), int(savedH), webview.HintNone)
+
 	wv.Bind("nativeQuit", func() { os.Exit(0) }) //nolint:errcheck
 	wv.Navigate(fmt.Sprintf("http://127.0.0.1:%d", port))
+
+	// Restore saved window position (after Navigate so the window exists).
+	if prefs.Window.X != 0 || prefs.Window.Y != 0 {
+		wv.Dispatch(func() {
+			SetWindowFrame(wv.Window(), prefs.Window.X, prefs.Window.Y, savedW, savedH)
+		})
+	}
+
+	// Ask to reopen recent files when launched without arguments and not piped.
+	if len(files) == 0 && !piped && len(recent) > 0 {
+		go func() {
+			time.Sleep(400 * time.Millisecond)
+			result := make(chan bool, 1)
+			wv.Dispatch(func() { result <- ShowReopenAlert(len(recent)) })
+			if <-result {
+				for _, p := range recent {
+					startTailing(p)
+				}
+			}
+		}()
+	}
+
+	// Poll window frame every 2 s and persist changes.
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		var last [4]float64
+		for range ticker.C {
+			ch := make(chan [4]float64, 1)
+			wv.Dispatch(func() {
+				x, y, w, h := GetWindowFrame(wv.Window())
+				ch <- [4]float64{x, y, w, h}
+			})
+			frame := <-ch
+			if frame != last && frame[2] >= 640 && frame[3] >= 400 {
+				last = frame
+				setWindowPref(frame[0], frame[1], frame[2], frame[3])
+			}
+		}
+	}()
+
 	wv.Run()
 }

@@ -28,3 +28,11 @@ func cClearRecent() {
 	default:
 	}
 }
+
+//export cRestartApp
+func cRestartApp() {
+	select {
+	case menuFileCh <- "restart":
+	default:
+	}
+}
