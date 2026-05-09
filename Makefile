@@ -1,7 +1,7 @@
 BINARY          := jsonlv
 APP             := jsonlv.app
 APP_INSTALL_DIR := $(HOME)/Applications
-INSTALL_DIR     := /usr/local/bin
+INSTALL_DIR     := $(HOME)/.local/bin
 
 .PHONY: build app install clean
 
@@ -31,10 +31,13 @@ install: app
 	mkdir -p $(APP_INSTALL_DIR)
 	rm -rf $(APP_INSTALL_DIR)/$(APP)
 	cp -r $(APP) $(APP_INSTALL_DIR)/$(APP)
+	mkdir -p $(INSTALL_DIR)
 	@printf '#!/bin/sh\nexec $(APP_INSTALL_DIR)/$(APP)/Contents/MacOS/$(BINARY) "$$@"\n' \
 		> $(INSTALL_DIR)/$(BINARY)
 	chmod +x $(INSTALL_DIR)/$(BINARY)
 	@echo "Installed: $(APP_INSTALL_DIR)/$(APP)  and  $(INSTALL_DIR)/$(BINARY)"
+	@echo "Ensure $(INSTALL_DIR) is in your PATH (add to ~/.zshrc if needed):"
+	@echo "  export PATH=\"$(INSTALL_DIR):\$$PATH\""
 
 clean:
 	rm -rf $(BINARY) $(APP)
