@@ -32,6 +32,19 @@
       --svc-color: #0969da;
       --scrollbar: #d0d7de;
     }
+    body.solarized {
+      --bg:        #fdf6e3;
+      --bg-2:      #eee8d5;
+      --bg-3:      #e3ddc8;
+      --bg-btn:    #ddd8c4;
+      --border:    #b8b09a;
+      --text:      #0d2027;
+      --text-hi:   #001920;
+      --text-dim:  #2d4a54;
+      --text-faint:#536f79;
+      --svc-color: #1565a0;
+      --scrollbar: #b8b09a;
+    }
 
     body {
       background: var(--bg);
@@ -54,6 +67,7 @@
       border-bottom: 1px solid var(--border);
       flex-shrink: 0;
       flex-wrap: wrap;
+      position: relative;
     }
 
     #toolbar h1 {
@@ -95,8 +109,9 @@
     }
     #autoscroll-btn.on { border-color: #58a6ff; color: #58a6ff; background: #1c2d40; }
     body.light #autoscroll-btn.on { background: #ddf4ff; color: #0969da; border-color: #0969da; }
+    body.solarized #autoscroll-btn.on { background: #d4eaf7; color: #268bd2; border-color: #268bd2; }
 
-    #theme-btn, #clear-btn {
+    #settings-btn, #clear-btn {
       font-family: inherit;
       font-size: 11px;
       padding: 2px 10px;
@@ -106,7 +121,32 @@
       color: var(--text-dim);
       cursor: pointer;
     }
-    #theme-btn:hover, #clear-btn:hover { background: var(--border); color: var(--text-hi); }
+    #settings-btn:hover, #clear-btn:hover { background: var(--border); color: var(--text-hi); }
+
+    #settings-panel {
+      position: absolute;
+      top: calc(100% + 4px);
+      right: 0;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 200;
+      white-space: nowrap;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    #settings-panel label {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      color: var(--text);
+      cursor: pointer;
+    }
+    #settings-panel input[type="radio"] { cursor: pointer; }
 
     /* ── find bar ── */
     #find-bar {
@@ -196,7 +236,7 @@
     .entry[data-level="WARN"]:hover  { background: rgba(227,179,65,0.08); }
 
     .ts    { color: var(--text-faint); flex-shrink: 0; width: 7.5em; font-size: 0.9em; }
-    .badge { flex-shrink: 0; width: 3.5em; text-align: center; font-size: 0.83em; font-weight: 700; padding: 1px 4px; border-radius: 4px; letter-spacing: 0.04em; }
+    .badge { flex-shrink: 0; min-width: 3.5em; text-align: center; font-size: 0.83em; font-weight: 700; padding: 1px 4px; border-radius: 4px; letter-spacing: 0.04em; }
     .badge.INFO     { background: rgba(63,185,80,0.15);   color: #3fb950; }
     .badge.WARN     { background: rgba(227,179,65,0.15);  color: #e3b341; }
     .badge.ERROR    { background: rgba(248,81,73,0.15);   color: #f85149; }
@@ -212,6 +252,9 @@
     body.light .entry[data-level="ERROR"]    .msg { color: #cf222e; }
     body.light .entry[data-level="CRITICAL"] .msg { color: #a8123e; }
     body.light .entry[data-level="WARN"]     .msg { color: #9a6700; }
+    body.solarized .entry[data-level="ERROR"]    .msg { color: #b91c1c; }
+    body.solarized .entry[data-level="CRITICAL"] .msg { color: #9d174d; }
+    body.solarized .entry[data-level="WARN"]     .msg { color: #92400e; }
 
     .meta { color: var(--text-faint); flex-shrink: 0; font-size: 0.9em; }
     .entry.plain .msg { color: var(--text-dim); }
@@ -240,6 +283,10 @@
     body.light .js { color: #0a3069; }
     body.light .jn { color: #953800; }
     body.light .jb { color: #cf222e; }
+    body.solarized .jk { color: #1565a0; }
+    body.solarized .js { color: #007070; }
+    body.solarized .jn { color: #8b3a00; }
+    body.solarized .jb { color: #b91c1c; }
 
     /* ── empty state ── */
     #empty {
@@ -394,7 +441,7 @@
     .ctx-sep { height: 1px; background: var(--border); margin: 4px 0; }
   </style>
 </head>
-<body class="light">
+<body>
   <div id="toolbar">
     <h1>Log Viewer</h1>
     <button class="filter-btn active" data-level="ALL">All</button>
@@ -404,8 +451,13 @@
     <button class="filter-btn CRITICAL" data-level="CRITICAL">CRITICAL</button>
     <button class="filter-btn DEBUG"    data-level="DEBUG">DEBUG</button>
     <button id="clear-btn">Clear</button>
-    <button id="theme-btn">🌙 Dark</button>
+    <button id="settings-btn">⚙ Settings</button>
     <button id="autoscroll-btn" class="on">⬇ Auto-scroll</button>
+    <div id="settings-panel" class="hidden">
+      <label><input type="radio" name="theme" value="dark"> Dark</label>
+      <label><input type="radio" name="theme" value="light"> Light</label>
+      <label><input type="radio" name="theme" value="solarized"> Solarized</label>
+    </div>
   </div>
 
   <div id="find-bar" class="hidden">
@@ -1164,12 +1216,37 @@
     document.getElementById('find-next').addEventListener('click', findNext);
     document.getElementById('find-close').addEventListener('click', closeFind);
 
-    // ── theme toggle ─────────────────────────────────────────────────────────
+    // ── theme / settings panel ────────────────────────────────────────────────
 
-    const themeBtn = document.getElementById('theme-btn');
-    themeBtn.addEventListener('click', function() {
-      const light = document.body.classList.toggle('light');
-      themeBtn.textContent = light ? '🌙 Dark' : '☀ Light';
+    const THEMES = ['dark', 'light', 'solarized'];
+
+    function applyTheme(name) {
+      document.body.classList.remove(...THEMES);
+      if (name !== 'dark') document.body.classList.add(name);
+      localStorage.setItem('theme', name);
+      document.querySelectorAll('input[name="theme"]').forEach(function(r) {
+        r.checked = r.value === name;
+      });
+    }
+
+    applyTheme(localStorage.getItem('theme') || 'light');
+
+    const settingsBtn = document.getElementById('settings-btn');
+    const settingsPanel = document.getElementById('settings-panel');
+
+    settingsBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      settingsPanel.classList.toggle('hidden');
+    });
+
+    document.addEventListener('click', function() {
+      settingsPanel.classList.add('hidden');
+    });
+
+    settingsPanel.addEventListener('click', function(e) { e.stopPropagation(); });
+
+    settingsPanel.querySelectorAll('input[name="theme"]').forEach(function(r) {
+      r.addEventListener('change', function() { applyTheme(r.value); });
     });
 
     // ── global keyboard shortcuts ─────────────────────────────────────────────
