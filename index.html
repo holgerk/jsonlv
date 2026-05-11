@@ -243,7 +243,7 @@
     .badge.CRITICAL { background: rgba(255,45,85,0.2);    color: #ff2d55; }
     .badge.DEBUG    { background: rgba(139,148,158,0.12); color: var(--text-dim); }
 
-    .src  { color: var(--text-faint); flex-shrink: 0; max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.8; }
+    .src  { flex-shrink: 0; max-width: 10em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.8; }
     .msg  { color: var(--text); flex: 1; min-width: 0; overflow-wrap: break-word; word-break: break-word; }
     .entry[data-level="ERROR"]    .msg { color: #ffa198; }
     .entry[data-level="CRITICAL"] .msg { color: #ff6b8a; }
@@ -504,12 +504,15 @@
   </div>
 
   <script>
-    const FRUITS = ['🍎', '🍌', '🍊', '🍇', '🍓', '🫐'];
-    function srcFruit(src) {
+    const FRUITS       = ['🍎', '🍌', '🍊', '🍇', '🍓', '🫐', '🍋', '🍑', '🥭', '🍍', '🍒'];
+    const FRUIT_COLORS = ['#ef5350', '#f9a825', '#fb8c00', '#ab47bc', '#ec407a', '#5c6bc0', '#c0ca33', '#ff8a65', '#ffb300', '#66bb6a', '#e53935'];
+    function srcIdx(src) {
       let h = 0;
       for (let i = 0; i < src.length; i++) h = (h + src.charCodeAt(i)) | 0;
-      return FRUITS[((h % FRUITS.length) + FRUITS.length) % FRUITS.length];
+      return ((h % FRUITS.length) + FRUITS.length) % FRUITS.length;
     }
+    function srcFruit(src) { return FRUITS[srcIdx(src)]; }
+    function srcColor(src) { return FRUIT_COLORS[srcIdx(src)]; }
 
     const BATCH      = 200;
     const rawData    = new WeakMap(); // entry → raw log line string
@@ -597,7 +600,7 @@
       }).join('');
 
       el.innerHTML =
-        (src ? '<span class="src">' + srcFruit(src) + ' ' + esc(src) + '</span>' : '') +
+        (src ? '<span class="src" style="color:' + srcColor(src) + '">' + srcFruit(src) + ' ' + esc(src) + '</span>' : '') +
         '<span class="ts">'                        + esc(ts)         + '</span>' +
         '<span class="badge ' + esc(level) + '">'  + esc(level||'—') + '</span>' +
         colsHtml +
