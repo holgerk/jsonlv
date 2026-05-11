@@ -244,7 +244,6 @@
     .badge.DEBUG    { background: rgba(139,148,158,0.12); color: var(--text-dim); }
 
     .src  { color: var(--text-faint); flex-shrink: 0; max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.83em; opacity: 0.8; }
-    .svc  { color: var(--svc-color); flex-shrink: 0; width: 11.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .msg  { color: var(--text); flex: 1; min-width: 0; overflow-wrap: break-word; word-break: break-word; }
     .entry[data-level="ERROR"]    .msg { color: #ffa198; }
     .entry[data-level="CRITICAL"] .msg { color: #ff6b8a; }
@@ -505,6 +504,13 @@
   </div>
 
   <script>
+    const FRUITS = ['🍎', '🍌', '🍊', '🍇', '🍓', '🫐'];
+    function srcFruit(src) {
+      let h = 0;
+      for (let i = 0; i < src.length; i++) h = (h + src.charCodeAt(i)) | 0;
+      return FRUITS[((h % FRUITS.length) + FRUITS.length) % FRUITS.length];
+    }
+
     const BATCH      = 200;
     const rawData    = new WeakMap(); // entry → raw log line string
     const sourceData = new WeakMap(); // entry → source filename
@@ -548,7 +554,7 @@
     function buildEntry(item) {
       const src = item.s || '';
       const raw = item.d;
-      let level = '', service = '', message = raw, ts = '', meta = '';
+      let level = '', message = raw, ts = '', meta = '';
       let parsedObj = null;
       try {
         parsedObj = JSON.parse(raw);
@@ -565,8 +571,6 @@
           if (rawLevel === 'FATAL')   rawLevel = 'CRITICAL';
         }
         level   = rawLevel;
-        service = parsedObj.channel || parsedObj.service || parsedObj.logger ||
-                  (parsedObj.dd && parsedObj.dd.service) || '';
         message = parsedObj.message || parsedObj.msg || parsedObj.error || raw;
         ts      = fmtTime(parsedObj.datetime || parsedObj.timestamp || parsedObj.time || parsedObj['@timestamp'] || '');
         const dur = parsedObj.duration_ms != null ? parsedObj.duration_ms + 'ms' : '';
@@ -595,8 +599,7 @@
       el.innerHTML =
         '<span class="ts">'                        + esc(ts)         + '</span>' +
         '<span class="badge ' + esc(level) + '">'  + esc(level||'—') + '</span>' +
-        (src ? '<span class="src">' + esc(src) + '</span>' : '') +
-        '<span class="svc">'                       + esc(service)    + '</span>' +
+        (src ? '<span class="src">' + srcFruit(src) + ' ' + esc(src) + '</span>' : '') +
         colsHtml +
         '<span class="msg">'                       + esc(message)    + '</span>' +
         (meta ? '<span class="meta">' + esc(meta) + '</span>' : '') +
@@ -1025,7 +1028,6 @@
       entries.forEach(function(entry) {
         if (entry.classList.contains('hidden')) return;
         markTextNodes(entry.querySelector('.msg'), lterm, findTerm);
-        markTextNodes(entry.querySelector('.svc'), lterm, findTerm);
         markTextNodes(entry.querySelector('.ts'),  lterm, findTerm);
         const raw = rawData.get(entry);
         if (raw && raw.toLowerCase().includes(lterm)) {
@@ -1147,7 +1149,6 @@
       const needExpand = [];
       entries.forEach(function(entry) {
         markTextNodes(entry.querySelector('.msg'), lterm, term);
-        markTextNodes(entry.querySelector('.svc'), lterm, term);
         markTextNodes(entry.querySelector('.ts'),  lterm, term);
         const raw = rawData.get(entry);
         if (raw && raw.toLowerCase().includes(lterm)) needExpand.push(entry);
