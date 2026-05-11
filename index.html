@@ -243,7 +243,7 @@
     .badge.CRITICAL { background: rgba(255,45,85,0.2);    color: #ff2d55; }
     .badge.DEBUG    { background: rgba(139,148,158,0.12); color: var(--text-dim); }
 
-    .src  { color: var(--text-faint); flex-shrink: 0; max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.83em; opacity: 0.8; }
+    .src  { color: var(--text-faint); flex-shrink: 0; max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: 0.8; }
     .msg  { color: var(--text); flex: 1; min-width: 0; overflow-wrap: break-word; word-break: break-word; }
     .entry[data-level="ERROR"]    .msg { color: #ffa198; }
     .entry[data-level="CRITICAL"] .msg { color: #ff6b8a; }
@@ -597,9 +597,9 @@
       }).join('');
 
       el.innerHTML =
+        (src ? '<span class="src">' + srcFruit(src) + ' ' + esc(src) + '</span>' : '') +
         '<span class="ts">'                        + esc(ts)         + '</span>' +
         '<span class="badge ' + esc(level) + '">'  + esc(level||'—') + '</span>' +
-        (src ? '<span class="src">' + srcFruit(src) + ' ' + esc(src) + '</span>' : '') +
         colsHtml +
         '<span class="msg">'                       + esc(message)    + '</span>' +
         (meta ? '<span class="meta">' + esc(meta) + '</span>' : '') +
