@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -58,12 +59,31 @@ func (b *broker) publish(source, line string) {
 	}
 }
 
+func (b *broker) publishBatch(msgs []logMsg) {
+	b.mu.Lock()
+	for _, msg := range msgs {
+		if len(b.history) >= maxHistory {
+			b.history = b.history[1:]
+		}
+		b.history = append(b.history, msg)
+	}
+	for ch := range b.clients {
+		for _, msg := range msgs {
+			select {
+			case ch <- msg:
+			default:
+			}
+		}
+	}
+	b.mu.Unlock()
+}
+
 func (b *broker) subscribe() ([]logMsg, chan logMsg) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	hist := make([]logMsg, len(b.history))
 	copy(hist, b.history)
-	ch := make(chan logMsg, 1024)
+	ch := make(chan logMsg, maxHistory)
 	b.clients[ch] = struct{}{}
 	return hist, ch
 }
@@ -119,6 +139,107 @@ func restartApp() {
 		exe = os.Args[0]
 	}
 	syscall.Exec(exe, os.Args, os.Environ()) //nolint:errcheck
+}
+
+func parseLineTime(line string) time.Time {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(line), &obj); err != nil {
+		return time.Time{}
+	}
+	for _, key := range []string{"datetime", "timestamp", "time", "@timestamp"} {
+		raw, ok := obj[key]
+		if !ok {
+			continue
+		}
+		var s string
+		if json.Unmarshal(raw, &s) == nil {
+			for _, layout := range []string{
+				time.RFC3339Nano,
+				time.RFC3339,
+				"2006-01-02 15:04:05.999999999Z07:00",
+				"2006-01-02 15:04:05.999999999",
+				"2006-01-02 15:04:05",
+				"2006-01-02T15:04:05.999999999",
+				"2006-01-02T15:04:05",
+			} {
+				if t, err := time.Parse(layout, s); err == nil {
+					return t
+				}
+			}
+		}
+		var f float64
+		if json.Unmarshal(raw, &f) == nil {
+			if f > 1e10 { // millisecond epoch (> year 2001 in ms)
+				ms := int64(f)
+				return time.Unix(ms/1000, (ms%1000)*int64(time.Millisecond))
+			}
+			sec := int64(f)
+			return time.Unix(sec, int64((f-float64(sec))*1e9))
+		}
+	}
+	return time.Time{}
+}
+
+type tailLine struct {
+	source string
+	line   string
+	ts     time.Time
+}
+
+func reopenFilesSorted(paths []string, b *broker) {
+	tailedMu.Lock()
+	for _, p := range paths {
+		tailedFiles[p] = true
+	}
+	tailedMu.Unlock()
+
+	var mu sync.Mutex
+	var all []tailLine
+	var wg sync.WaitGroup
+
+	for _, path := range paths {
+		path := path
+		source := filepath.Base(path)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			tail, err := lastNLines(path, 1000)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %s: %v\n", path, err)
+				return
+			}
+			local := make([]tailLine, 0, len(tail))
+			for _, line := range tail {
+				if line != "" {
+					local = append(local, tailLine{source, line, parseLineTime(line)})
+				}
+			}
+			mu.Lock()
+			all = append(all, local...)
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+
+	sort.SliceStable(all, func(i, j int) bool {
+		ti, tj := all[i].ts, all[j].ts
+		if ti.IsZero() != tj.IsZero() {
+			return tj.IsZero()
+		}
+		return ti.Before(tj)
+	})
+
+	msgs := make([]logMsg, len(all))
+	for i, l := range all {
+		msgs[i] = logMsg{S: l.source, D: l.line}
+	}
+	b.publishBatch(msgs)
+
+	for _, path := range paths {
+		path := path
+		source := filepath.Base(path)
+		go followFile(path, source, b)
+	}
 }
 
 // stdinIsPiped reports whether stdin is a pipe (not a terminal).
@@ -366,9 +487,7 @@ func main() {
 			result := make(chan bool, 1)
 			wv.Dispatch(func() { result <- ShowReopenAlert(len(recent)) })
 			if <-result {
-				for _, p := range recent {
-					startTailing(p)
-				}
+				go reopenFilesSorted(recent, b)
 			}
 		}()
 	}
