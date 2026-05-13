@@ -1170,7 +1170,7 @@
       });
 
       findMatches = Array.from(list.querySelectorAll('mark'));
-      findIdx     = findMatches.length > 0 ? 0 : -1;
+      findIdx     = findMatches.length > 0 ? findMatches.length - 1 : -1;
       if (findIdx >= 0) activateCurrent();
       updateFindStatus();
     }
@@ -1213,7 +1213,7 @@
       findTimer = setTimeout(function() { doSearch(findInput.value); }, 150);
     });
     findInput.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter')  { e.preventDefault(); e.shiftKey ? findPrev() : findNext(); }
+      if (e.key === 'Enter')  { e.preventDefault(); e.shiftKey ? findNext() : findPrev(); }
       if (e.key === 'Escape') { e.preventDefault(); closeFind(); }
     });
     document.getElementById('find-prev').addEventListener('click', findPrev);
