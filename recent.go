@@ -14,8 +14,7 @@ const maxRecent = 10
 var menuFileCh = make(chan string, 10)
 
 func recentFilePath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "jsonlv", "recent.json")
+	return filepath.Join(configDir(), "recent.json")
 }
 
 func loadRecent() []string {

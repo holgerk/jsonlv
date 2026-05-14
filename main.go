@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -88,6 +87,12 @@ func (b *broker) subscribe() ([]logMsg, chan logMsg) {
 	return hist, ch
 }
 
+func (b *broker) reset() {
+	b.mu.Lock()
+	b.history = b.history[:0]
+	b.mu.Unlock()
+}
+
 func (b *broker) unsubscribe(ch chan logMsg) {
 	b.mu.Lock()
 	delete(b.clients, ch)
@@ -100,146 +105,12 @@ func sendMsg(w http.ResponseWriter, flusher http.Flusher, msg logMsg) {
 	flusher.Flush()
 }
 
-var globalBroker *broker
-
-var (
-	tailedMu    sync.Mutex
-	tailedFiles = map[string]bool{}
-)
-
-func startTailing(path string) {
-	tailedMu.Lock()
-	already := tailedFiles[path]
-	if !already {
-		tailedFiles[path] = true
-	}
-	tailedMu.Unlock()
-	if already {
-		return
-	}
-	source := filepath.Base(path)
-	go func() {
-		tail, err := lastNLines(path, 1000)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %s: %v\n", path, err)
-			return
-		}
-		for _, line := range tail {
-			if line != "" {
-				globalBroker.publish(source, line)
-			}
-		}
-		followFile(path, source, globalBroker)
-	}()
-}
-
 func restartApp() {
 	exe, err := os.Executable()
 	if err != nil {
 		exe = os.Args[0]
 	}
 	syscall.Exec(exe, os.Args, os.Environ()) //nolint:errcheck
-}
-
-func parseLineTime(line string) time.Time {
-	var obj map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(line), &obj); err != nil {
-		return time.Time{}
-	}
-	for _, key := range []string{"datetime", "timestamp", "time", "@timestamp"} {
-		raw, ok := obj[key]
-		if !ok {
-			continue
-		}
-		var s string
-		if json.Unmarshal(raw, &s) == nil {
-			for _, layout := range []string{
-				time.RFC3339Nano,
-				time.RFC3339,
-				"2006-01-02 15:04:05.999999999Z07:00",
-				"2006-01-02 15:04:05.999999999",
-				"2006-01-02 15:04:05",
-				"2006-01-02T15:04:05.999999999",
-				"2006-01-02T15:04:05",
-			} {
-				if t, err := time.Parse(layout, s); err == nil {
-					return t
-				}
-			}
-		}
-		var f float64
-		if json.Unmarshal(raw, &f) == nil {
-			if f > 1e10 { // millisecond epoch (> year 2001 in ms)
-				ms := int64(f)
-				return time.Unix(ms/1000, (ms%1000)*int64(time.Millisecond))
-			}
-			sec := int64(f)
-			return time.Unix(sec, int64((f-float64(sec))*1e9))
-		}
-	}
-	return time.Time{}
-}
-
-type tailLine struct {
-	source string
-	line   string
-	ts     time.Time
-}
-
-func reopenFilesSorted(paths []string, b *broker) {
-	tailedMu.Lock()
-	for _, p := range paths {
-		tailedFiles[p] = true
-	}
-	tailedMu.Unlock()
-
-	var mu sync.Mutex
-	var all []tailLine
-	var wg sync.WaitGroup
-
-	for _, path := range paths {
-		path := path
-		source := filepath.Base(path)
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			tail, err := lastNLines(path, 1000)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: %s: %v\n", path, err)
-				return
-			}
-			local := make([]tailLine, 0, len(tail))
-			for _, line := range tail {
-				if line != "" {
-					local = append(local, tailLine{source, line, parseLineTime(line)})
-				}
-			}
-			mu.Lock()
-			all = append(all, local...)
-			mu.Unlock()
-		}()
-	}
-	wg.Wait()
-
-	sort.SliceStable(all, func(i, j int) bool {
-		ti, tj := all[i].ts, all[j].ts
-		if ti.IsZero() != tj.IsZero() {
-			return tj.IsZero()
-		}
-		return ti.Before(tj)
-	})
-
-	msgs := make([]logMsg, len(all))
-	for i, l := range all {
-		msgs[i] = logMsg{S: l.source, D: l.line}
-	}
-	b.publishBatch(msgs)
-
-	for _, path := range paths {
-		path := path
-		source := filepath.Base(path)
-		go followFile(path, source, b)
-	}
 }
 
 // stdinIsPiped reports whether stdin is a pipe (not a terminal).
@@ -271,11 +142,13 @@ func main() {
 
 	follow := flag.Bool("f", false, "follow file(s) for new lines")
 	lines := flag.Int("n", 1000, "number of lines from end of file")
+	headless := flag.Bool("headless", false, "HTTP-only mode for testing (no GUI)")
+	listenPort := flag.Int("port", 0, "HTTP listen port (0 = random)")
 	flag.Parse()
 	files := flag.Args()
 
 	b := newBroker()
-	globalBroker = b
+	w := NewWatcher(b)
 
 	piped := stdinIsPiped()
 
@@ -368,12 +241,33 @@ func main() {
 		}
 	})
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if *headless {
+		mux.HandleFunc("/inject", func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			src := r.URL.Query().Get("src")
+			if src == "" {
+				src = "test"
+			}
+			b.publish(src, strings.TrimSpace(string(body)))
+			w.WriteHeader(http.StatusNoContent)
+		})
+		mux.HandleFunc("/reset", func(w http.ResponseWriter, r *http.Request) {
+			b.reset()
+			w.WriteHeader(http.StatusNoContent)
+		})
+	}
+
+	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", *listenPort))
 	if err != nil {
 		panic(err)
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
 	go http.Serve(ln, mux) //nolint:errcheck
+
+	if *headless {
+		fmt.Printf("http://127.0.0.1:%d\n", port)
+		select {}
+	}
 
 	wv := webview.New(true)
 	defer wv.Destroy()
@@ -431,7 +325,7 @@ func main() {
 					continue
 				}
 				for _, p := range paths {
-					startTailing(p)
+					w.Add(p)
 				}
 				recent := addRecent(paths)
 				wv.Dispatch(func() { RebuildRecentMenu(recent) })
@@ -448,7 +342,7 @@ func main() {
 				setWindowPref(frame[0], frame[1], frame[2], frame[3])
 				restartApp()
 			default:
-				startTailing(action)
+				w.Add(action)
 				recent := addRecent([]string{action})
 				wv.Dispatch(func() { RebuildRecentMenu(recent) })
 			}
@@ -487,7 +381,7 @@ func main() {
 			result := make(chan bool, 1)
 			wv.Dispatch(func() { result <- ShowReopenAlert(len(recent)) })
 			if <-result {
-				go reopenFilesSorted(recent, b)
+				go w.ReopenSorted(recent)
 			}
 		}()
 	}

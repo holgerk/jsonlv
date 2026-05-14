@@ -14,8 +14,7 @@ var (
 )
 
 func mappingsFile() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "jsonlv", "mappings.json")
+	return filepath.Join(configDir(), "mappings.json")
 }
 
 func initMappings() {

@@ -7,6 +7,7 @@ import (
 	"sync"
 )
 
+
 type windowFrame struct {
 	X, Y, W, H float64
 }
@@ -22,8 +23,7 @@ var (
 )
 
 func prefsFilePath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "jsonlv", "prefs.json")
+	return filepath.Join(configDir(), "prefs.json")
 }
 
 func loadPrefs() appPrefs {
