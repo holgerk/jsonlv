@@ -3,7 +3,15 @@ APP             := jsonlv.app
 APP_INSTALL_DIR := $(HOME)/Applications
 INSTALL_DIR     := $(HOME)/.local/bin
 
-.PHONY: build app install clean
+.PHONY: build app install clean test test-go test-e2e
+
+test: test-go test-e2e
+
+test-go:
+	go test ./...
+
+test-e2e:
+	npx playwright test
 
 build:
 	go build -o $(BINARY) .
