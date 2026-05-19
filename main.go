@@ -163,7 +163,6 @@ func main() {
 		}()
 	} else {
 		for _, path := range files {
-			path := path
 			source := filepath.Base(path)
 			go func() {
 				tail, err := lastNLines(path, *lines)
@@ -362,6 +361,9 @@ func main() {
 		x, y, w, h := GetWindowFrame(wv.Window())
 		setWindowPref(x, y, w, h)
 		os.Exit(0)
+	})
+	wv.Bind("nativeOpenURL", func(rawURL string) { //nolint:errcheck
+		exec.Command("open", rawURL).Start() //nolint:errcheck
 	})
 	wv.Navigate(fmt.Sprintf("http://127.0.0.1:%d", port))
 

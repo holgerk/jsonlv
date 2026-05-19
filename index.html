@@ -746,11 +746,10 @@
       });
     }
 
-    // ── file path linking ─────────────────────────────────────────────────────
+    // ── file path & URL linking ───────────────────────────────────────────────
 
-    // Matches absolute paths with ≥1 directory component and a file extension,
-    // optionally followed by :line.
-    const FILE_PATH_RE = /(\/(?:[^\s'"<>\]]+\/)+[^\s'"<>\]/]+\.[a-zA-Z0-9]{1,10})(?::(\d+))?/g;
+    // Group 1: http/https URL  |  Group 2: absolute file path  |  Group 3: line number
+    const LINK_RE = /(https?:\/\/[^\s'"<>\]]+)|(\/(?:[^\s'"<>\]]+\/)+[^\s'"<>\]/]+\.[a-zA-Z0-9]{1,10})(?::(\d+))?/g;
 
     async function openFile(file, line) {
       try {
@@ -768,20 +767,37 @@
       let node;
       while ((node = walker.nextNode())) nodes.push(node);
       nodes.forEach(function(tn) {
-        FILE_PATH_RE.lastIndex = 0;
+        LINK_RE.lastIndex = 0;
         const text = tn.textContent;
         let match, last = 0;
         const frag = document.createDocumentFragment();
-        while ((match = FILE_PATH_RE.exec(text)) !== null) {
+        while ((match = LINK_RE.exec(text)) !== null) {
           if (match.index > last) frag.appendChild(document.createTextNode(text.slice(last, match.index)));
-          const filePath = match[1], lineNum = match[2] || '';
           const a = document.createElement('a');
-          a.href = '#';
           a.className = 'file-link';
-          a.textContent = match[0];
-          a.addEventListener('click', function(e) { e.preventDefault(); e.stopPropagation(); openFile(filePath, lineNum); });
+          let endPos = match.index + match[0].length;
+          if (match[1]) {
+            // http/https URL — trim trailing punctuation that is likely not part of the URL
+            const url = match[1].replace(/[.,;:!?)]+$/, '');
+            a.href = url;
+            a.textContent = url;
+            a.addEventListener('click', function(e) {
+              e.preventDefault();
+              e.stopPropagation();
+              if (window.nativeOpenURL) { window.nativeOpenURL(url); }
+              else { window.open(url, '_blank', 'noopener,noreferrer'); }
+            });
+            endPos = match.index + url.length;
+            LINK_RE.lastIndex = endPos;
+          } else {
+            // absolute file path
+            const filePath = match[2], lineNum = match[3] || '';
+            a.href = '#';
+            a.textContent = match[0];
+            a.addEventListener('click', function(e) { e.preventDefault(); e.stopPropagation(); openFile(filePath, lineNum); });
+          }
           frag.appendChild(a);
-          last = match.index + match[0].length;
+          last = endPos;
         }
         if (last === 0) return;
         if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
