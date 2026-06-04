@@ -163,6 +163,7 @@ func main() {
 		}()
 	} else {
 		for _, path := range files {
+			w.Register(path)
 			source := filepath.Base(path)
 			go func() {
 				tail, err := lastNLines(path, *lines)
@@ -331,6 +332,19 @@ func main() {
 			case "clear":
 				clearRecent()
 				wv.Dispatch(func() { RebuildRecentMenu(nil) })
+			case "clear-log-files":
+				files := w.Files()
+				if len(files) == 0 {
+					continue
+				}
+				result := make(chan bool, 1)
+				wv.Dispatch(func() { result <- ShowClearLogFilesAlert(files) })
+				if !<-result {
+					continue
+				}
+				for _, path := range files {
+					os.Truncate(path, 0) //nolint:errcheck
+				}
 			case "restart":
 				ch := make(chan [4]float64, 1)
 				wv.Dispatch(func() {

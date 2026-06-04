@@ -37,6 +37,14 @@ func cRestartApp() {
 	}
 }
 
+//export cClearLogFiles
+func cClearLogFiles() {
+	select {
+	case menuFileCh <- "clear-log-files":
+	default:
+	}
+}
+
 //export cSaveWindowFrame
 func cSaveWindowFrame(x, y, w, h C.CGFloat) {
 	setWindowPref(float64(x), float64(y), float64(w), float64(h))

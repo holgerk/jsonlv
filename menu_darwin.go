@@ -57,6 +57,7 @@ extern void cMenuOpenFiles(void);
 extern void cOpenFile(const char *path);
 extern void cClearRecent(void);
 extern void cRestartApp(void);
+extern void cClearLogFiles(void);
 extern void cSaveWindowFrame(CGFloat x, CGFloat y, CGFloat w, CGFloat h);
 
 // ── File menu handler ─────────────────────────────────────────────────────────
@@ -65,10 +66,11 @@ extern void cSaveWindowFrame(CGFloat x, CGFloat y, CGFloat w, CGFloat h);
 @property (nonatomic, copy) NSString *filePath;
 @end
 @implementation JSONLVMenuHandler
-- (void)doOpen:(id)sender     { cMenuOpenFiles(); }
-- (void)doOpenFile:(id)sender { cOpenFile([self.filePath UTF8String]); }
-- (void)doClear:(id)sender    { cClearRecent(); }
-- (void)doRestart:(id)sender  { cRestartApp(); }
+- (void)doOpen:(id)sender          { cMenuOpenFiles(); }
+- (void)doOpenFile:(id)sender      { cOpenFile([self.filePath UTF8String]); }
+- (void)doClear:(id)sender         { cClearRecent(); }
+- (void)doRestart:(id)sender       { cRestartApp(); }
+- (void)doTruncateLogs:(id)sender  { cClearLogFiles(); }
 @end
 
 static JSONLVMenuHandler *gMenuHandler = nil;
@@ -120,6 +122,12 @@ void setupFileMenu(const char *recentNL) {
     [recentItem setSubmenu:gRecentMenu];
 
     rebuildRecentMenuC(recentNL);
+
+    [fileMenu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem *truncateItem = [[NSMenuItem alloc]
+        initWithTitle:@"Log-Dateien leeren…" action:@selector(doTruncateLogs:) keyEquivalent:@""];
+    truncateItem.target = gMenuHandler;
+    [fileMenu addItem:truncateItem];
 }
 
 // ── App delegate (saves window frame on quit) ─────────────────────────────────
@@ -155,6 +163,30 @@ void getWindowFrame(void *winPtr, CGFloat *x, CGFloat *y, CGFloat *w, CGFloat *h
 void setWindowFrame(void *winPtr, CGFloat x, CGFloat y, CGFloat w, CGFloat h) {
     NSWindow *win = (__bridge NSWindow*)winPtr;
     [win setFrame:NSMakeRect(x, y, w, h) display:YES animate:NO];
+}
+
+// ── Clear log files alert ─────────────────────────────────────────────────────
+
+int showClearLogFilesAlertC(const char *filesNL) {
+    NSString *joined = filesNL ? [NSString stringWithUTF8String:filesNL] : @"";
+    NSArray<NSString*> *paths = joined.length > 0
+        ? [joined componentsSeparatedByString:@"\n"] : @[];
+
+    NSMutableArray<NSString*> *names = [NSMutableArray array];
+    for (NSString *p in paths) {
+        if (p.length) [names addObject:p.lastPathComponent];
+    }
+    if (names.count == 0) return 0;
+
+    NSAlert *alert = [NSAlert new];
+    alert.alertStyle      = NSAlertStyleWarning;
+    alert.messageText     = @"Log-Dateien leeren?";
+    alert.informativeText = [NSString stringWithFormat:
+        @"Die folgenden Dateien werden auf der Festplatte geleert:\n\n%@\n\nDieser Vorgang kann nicht rückgängig gemacht werden.",
+        [names componentsJoinedByString:@"\n"]];
+    [alert addButtonWithTitle:@"Leeren"];
+    [alert addButtonWithTitle:@"Abbrechen"];
+    return ([alert runModal] == NSAlertFirstButtonReturn) ? 1 : 0;
 }
 
 // ── Reopen alert ──────────────────────────────────────────────────────────────
@@ -294,4 +326,10 @@ func SetWindowFrame(winPtr unsafe.Pointer, x, y, w, h float64) {
 
 func ShowReopenAlert(count int) bool {
 	return C.showReopenAlert(C.int(count)) == 1
+}
+
+func ShowClearLogFilesAlert(files []string) bool {
+	cs := C.CString(strings.Join(files, "\n"))
+	defer C.free(unsafe.Pointer(cs))
+	return C.showClearLogFilesAlertC(cs) == 1
 }

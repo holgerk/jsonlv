@@ -86,6 +86,11 @@ func followFile(path, source string, b *broker) {
 			partial = append(partial[:0], data...)
 		} else {
 			time.Sleep(100 * time.Millisecond)
+			if fi, err := f.Stat(); err == nil {
+				if cur, err := f.Seek(0, io.SeekCurrent); err == nil && cur > fi.Size() {
+					f.Seek(0, io.SeekStart) //nolint:errcheck
+				}
+			}
 		}
 	}
 }

@@ -67,6 +67,24 @@ func NewWatcher(b *broker) *Watcher {
 	return &Watcher{b: b, tailed: map[string]bool{}}
 }
 
+// Register records path as open without starting a tail goroutine.
+func (w *Watcher) Register(path string) {
+	w.mu.Lock()
+	w.tailed[path] = true
+	w.mu.Unlock()
+}
+
+// Files returns the paths of all currently tracked files.
+func (w *Watcher) Files() []string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	files := make([]string, 0, len(w.tailed))
+	for p := range w.tailed {
+		files = append(files, p)
+	}
+	return files
+}
+
 // Add begins tailing path if it is not already being watched.
 func (w *Watcher) Add(path string) {
 	w.mu.Lock()
