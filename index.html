@@ -614,17 +614,56 @@
       return el;
     }
 
-    function syntaxHighlight(obj) {
-      const s = JSON.stringify(obj, null, 2)
-        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      return s.replace(
-        /("(?:\\u[\da-fA-F]{4}|\\[^u]|[^\\"])*"(\s*:)?|true|false|null|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
-        function(m) {
-          if (/^"/.test(m)) return m.endsWith(':') ? '<span class="jk">'+m+'</span>' : '<span class="js">'+m+'</span>';
-          if (m==='true'||m==='false') return '<span class="jb">'+m+'</span>';
-          if (m==='null') return '<span class="jz">'+m+'</span>';
-          return '<span class="jn">'+m+'</span>';
-        });
+    function yamlNeedsQuoting(s) {
+      if (s === '') return true;
+      if (/^(true|false|yes|no|on|off|null|~)$/i.test(s)) return true;
+      if (/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(s)) return true;
+      if (/^[{[\|>&*!%@`'":,#?]/.test(s)) return true;
+      if (/: /.test(s) || /^\.\.\.$/.test(s) || /^---$/.test(s)) return true;
+      if (/^\s|\s$/.test(s)) return true;
+      return false;
+    }
+
+    function renderYamlValue(val, depth, propPath) {
+      const pad = '  '.repeat(depth);
+      if (val === null || val === undefined) return '<span class="jz">null</span>';
+      if (typeof val === 'boolean') return '<span class="jb">' + val + '</span>';
+      if (typeof val === 'number')  return '<span class="jn">' + val + '</span>';
+      if (typeof val === 'string') {
+        if (val.includes('\n')) {
+          const lines = val.split('\n');
+          while (lines.length && lines[lines.length - 1] === '') lines.pop();
+          return '|\n' + lines.map(function(l) { return pad + esc(l); }).join('\n');
+        }
+        if (yamlNeedsQuoting(val)) {
+          return '<span class="js">\'' + esc(val).replace(/'/g, "''") + '\'</span>';
+        }
+        return '<span class="js">' + esc(val) + '</span>';
+      }
+      if (Array.isArray(val)) {
+        if (val.length === 0) return '<span class="jz">[]</span>';
+        return '\n' + val.map(function(item) {
+          const rendered = renderYamlValue(item, depth + 1, propPath);
+          return pad + (typeof item === 'object' && item !== null ? '-' : '- ') + rendered;
+        }).join('\n');
+      }
+      if (typeof val === 'object') {
+        const keys = Object.keys(val);
+        if (keys.length === 0) return '<span class="jz">{}</span>';
+        return '\n' + keys.map(function(k) {
+          const childPath = propPath ? propPath + '.' + k : k;
+          const keyHtml = '<span class="jk prop-key" data-prop="' + esc(childPath) + '">' + esc(k) + '</span>';
+          const rendered = renderYamlValue(val[k], depth + 1, childPath);
+          const sep = (typeof val[k] === 'object' && val[k] !== null) ? ':' : ': ';
+          return pad + keyHtml + sep + rendered;
+        }).join('\n');
+      }
+      return esc(String(val));
+    }
+
+    function toYamlHtml(obj) {
+      const rendered = renderYamlValue(obj, 0, '');
+      return rendered.startsWith('\n') ? rendered.slice(1) : rendered;
     }
 
     function getNestedValue(obj, path) {
@@ -805,24 +844,6 @@
       });
     }
 
-    function annotateTopLevelKeys(pre) {
-      const stack = [];
-      pre.querySelectorAll('.jk').forEach(function(span) {
-        const prev = span.previousSibling;
-        if (!prev || prev.nodeType !== Node.TEXT_NODE) return;
-        const text  = prev.textContent;
-        const after = text.slice(text.lastIndexOf('\n') + 1);
-        const depth = after.length / 2; // 2 spaces per indent level → depth 1 = top-level
-        if (depth < 1) return;
-        const raw  = span.textContent;
-        const name = raw.slice(1, raw.lastIndexOf('"'));
-        while (stack.length >= depth) stack.pop();
-        stack.push(name);
-        span.classList.add('prop-key');
-        span.dataset.prop = stack.join('.');
-      });
-    }
-
     function buildDetailsPanel(raw, src) {
       const panel = document.createElement('div');
       panel.className = 'details';
@@ -830,8 +851,7 @@
       try {
         const obj = JSON.parse(raw);
         if (src) obj._source = src;
-        pre.innerHTML = syntaxHighlight(obj);
-        annotateTopLevelKeys(pre);
+        pre.innerHTML = toYamlHtml(obj);
         linkifyFilePaths(pre);
       } catch (_) { pre.textContent = raw; linkifyFilePaths(pre); }
       panel.appendChild(pre);
