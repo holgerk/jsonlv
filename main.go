@@ -198,6 +198,29 @@ func main() {
 		json.NewEncoder(w).Encode(p) //nolint:errcheck
 	})
 
+	mux.HandleFunc("/set-col-width", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Key   string   `json:"key"`
+			Width *float64 `json:"width"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Key == "" {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		prefsMu.Lock()
+		if req.Width == nil {
+			delete(curPrefs.ColumnWidths, req.Key)
+		} else {
+			if curPrefs.ColumnWidths == nil {
+				curPrefs.ColumnWidths = make(map[string]float64)
+			}
+			curPrefs.ColumnWidths[req.Key] = *req.Width
+		}
+		prefsMu.Unlock()
+		savePrefs()
+		w.WriteHeader(http.StatusNoContent)
+	})
+
 	mux.HandleFunc("/set-theme", func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		theme := strings.TrimSpace(string(body))

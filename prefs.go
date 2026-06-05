@@ -13,8 +13,9 @@ type windowFrame struct {
 }
 
 type appPrefs struct {
-	Theme  string      `json:"theme,omitempty"`
-	Window windowFrame `json:"window,omitempty"`
+	Theme        string             `json:"theme,omitempty"`
+	Window       windowFrame        `json:"window,omitempty"`
+	ColumnWidths map[string]float64 `json:"columnWidths,omitempty"`
 }
 
 var (

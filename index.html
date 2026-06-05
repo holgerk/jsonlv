@@ -235,15 +235,15 @@
     .entry[data-level="WARN"]     { background: rgba(227,179,65,0.04); }
     .entry[data-level="WARN"]:hover  { background: rgba(227,179,65,0.08); }
 
-    .ts    { color: var(--text-faint); flex-shrink: 0; width: 7.5em; }
-    .badge { flex-shrink: 0; min-width: 6.5em; text-align: center; font-size: 0.83em; font-weight: 700; padding: 1px 4px; border-radius: 4px; letter-spacing: 0.04em; }
+    .ts    { color: var(--text-faint); flex-shrink: 0; width: var(--col-ts, 7.5em); }
+    .badge { flex-shrink: 0; width: var(--col-badge, 6.5em); text-align: center; font-size: 0.83em; font-weight: 700; padding: 1px 4px; border-radius: 4px; letter-spacing: 0.04em; }
     .badge.INFO     { background: rgba(63,185,80,0.15);   color: #3fb950; }
     .badge.WARN     { background: rgba(227,179,65,0.15);  color: #e3b341; }
     .badge.ERROR    { background: rgba(248,81,73,0.15);   color: #f85149; }
     .badge.CRITICAL { background: rgba(255,45,85,0.2);    color: #ff2d55; }
     .badge.DEBUG    { background: rgba(139,148,158,0.12); color: var(--text-dim); }
 
-    .src  { min-width: 10em; flex-shrink: 0; max-width: 10em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .src  { flex-shrink: 0; width: var(--col-src, 10em); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .msg  { color: var(--text); flex: 1; min-width: 0; overflow-wrap: break-word; word-break: break-word; }
     .entry[data-level="ERROR"]    .msg { color: #ffa198; }
     .entry[data-level="CRITICAL"] .msg { color: #ff6b8a; }
@@ -304,7 +304,6 @@
     /* ── custom columns ── */
     .col {
       flex-shrink: 0;
-      max-width: 13em;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -313,6 +312,47 @@
       border-left: 1px solid var(--border);
       padding-left: 6px;
     }
+
+    /* ── column header row ── */
+    #col-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 14px;
+      background: var(--bg-3);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      height: 20px;
+      user-select: none;
+    }
+    .hdr-cell {
+      flex-shrink: 0;
+      font-size: 10px;
+      color: var(--text-faint);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      position: relative;
+      display: flex;
+      align-items: center;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+    .hdr-ts    { width: var(--col-ts, 7.5em); }
+    .hdr-badge { width: var(--col-badge, 6.5em); }
+    .hdr-src   { width: var(--col-src, 10em); }
+    .hdr-msg   { flex: 1; min-width: 0; }
+    .hdr-col   { border-left: 1px solid var(--border); padding-left: 6px; }
+    .col-resize-handle {
+      position: absolute;
+      right: -4px;
+      top: 0;
+      width: 8px;
+      height: 100%;
+      cursor: col-resize;
+      z-index: 10;
+    }
+    .col-resize-handle:hover { background: rgba(88,166,255,0.3); border-radius: 2px; }
+    .col-resize-handle.dragging { background: rgba(88,166,255,0.55); border-radius: 2px; }
 
     /* ── clickable property keys in detail panel ── */
     .prop-key { cursor: pointer; }
@@ -482,6 +522,13 @@
 
   <div id="prop-filter-bar" class="hidden"></div>
 
+  <div id="col-header">
+    <span class="hdr-cell hdr-src hidden" id="hdr-src" data-col="src">Source<span class="col-resize-handle"></span></span>
+    <span class="hdr-cell hdr-ts" data-col="ts">Time<span class="col-resize-handle"></span></span>
+    <span class="hdr-cell hdr-badge" data-col="badge">Level<span class="col-resize-handle"></span></span>
+    <span class="hdr-cell hdr-msg">Message</span>
+  </div>
+
   <div id="log-list">
     <div id="empty">
       <div class="icon">◎</div>
@@ -517,6 +564,18 @@
     const rawData    = new WeakMap(); // entry → raw log line string
     const sourceData = new WeakMap(); // entry → source filename
     let customColumns = [];
+    const colCssKeys = new Map(); // prop name → css var suffix (e.g. 'service' → 'c-service')
+    let sourceActive = false;
+
+    function colCssKey(prop) {
+      return 'c-' + prop.replace(/[^a-zA-Z0-9_-]/g, '-');
+    }
+
+    function ensureSourceHeader() {
+      if (sourceActive) return;
+      sourceActive = true;
+      document.getElementById('hdr-src').classList.remove('hidden');
+    }
 
     let domCount     = 0;
     let counts       = { total: 0, INFO: 0, WARN: 0, ERROR: 0, CRITICAL: 0, DEBUG: 0 };
@@ -555,6 +614,7 @@
 
     function buildEntry(item) {
       const src = item.s || '';
+      if (src) ensureSourceHeader();
       const raw = item.d;
       let level = '', message = raw, ts = '', meta = '';
       let parsedObj = null;
@@ -587,6 +647,7 @@
       el.dataset.level = level;
       if (!entryMatchesFilters(level, parsedObj, src)) el.classList.add('hidden');
       const colsHtml = customColumns.map(function(prop) {
+        const cssKey = colCssKeys.get(prop) || colCssKey(prop);
         let v = '';
         if (prop === '_source') {
           v = src;
@@ -595,7 +656,7 @@
           if (val !== undefined && val !== null && typeof val !== 'object') v = String(val);
         }
         const display = v.length > 35 ? v.slice(0, 35) + '…' : v;
-        return '<span class="col" data-col="' + esc(prop) + '" title="' + esc(prop + ': ' + v) + '">' + esc(display) + '</span>';
+        return '<span class="col" data-col="' + esc(prop) + '" style="width:var(--col-' + esc(cssKey) + ')" title="' + esc(prop + ': ' + v) + '">' + esc(display) + '</span>';
       }).join('');
 
       el.innerHTML =
@@ -981,6 +1042,19 @@
     }
 
     function addColumnToEntries(prop) {
+      const cssKey = colCssKey(prop);
+      colCssKeys.set(prop, cssKey);
+      if (!document.documentElement.style.getPropertyValue('--col-' + cssKey)) {
+        document.documentElement.style.setProperty('--col-' + cssKey, '13em');
+      }
+      const hdr = document.getElementById('col-header');
+      const hdrMsg = hdr.querySelector('.hdr-msg');
+      const hdrCell = document.createElement('span');
+      hdrCell.className = 'hdr-cell hdr-col';
+      hdrCell.dataset.col = cssKey;
+      hdrCell.style.width = 'var(--col-' + cssKey + ')';
+      hdrCell.innerHTML = esc(prop) + '<span class="col-resize-handle"></span>';
+      hdr.insertBefore(hdrCell, hdrMsg);
       withScrollAnchor(function() {
         list.querySelectorAll('.entry').forEach(function(entry) {
           let v = '';
@@ -998,6 +1072,7 @@
           const span = document.createElement('span');
           span.className = 'col';
           span.dataset.col = prop;
+          span.style.width = 'var(--col-' + cssKey + ')';
           span.title = prop + ': ' + v;
           span.textContent = display;
           const msg = entry.querySelector('.msg');
@@ -1007,6 +1082,13 @@
     }
 
     function removeColumnFromEntries(prop) {
+      const cssKey = colCssKeys.get(prop);
+      if (cssKey) {
+        const hdr = document.getElementById('col-header');
+        const cell = hdr.querySelector('.hdr-cell[data-col="' + cssKey + '"]');
+        if (cell) cell.remove();
+      }
+      colCssKeys.delete(prop);
       withScrollAnchor(function() {
         list.querySelectorAll('.entry .col[data-col="' + prop + '"]').forEach(function(s) { s.remove(); });
       });
@@ -1315,6 +1397,71 @@
       if (e.metaKey && e.key === '-') { e.preventDefault(); fontSize = Math.max(fontSize - 1, 8);  applyFontSize(); }
     });
 
+    // ── column resize ─────────────────────────────────────────────────────────
+
+    let resizeDragState = null;
+    let resizeDragRafId = null;
+    let resizeDragCurrentX = 0;
+
+    document.addEventListener('pointerdown', function(e) {
+      if (!e.target.classList.contains('col-resize-handle')) return;
+      const cell = e.target.closest('.hdr-cell');
+      if (!cell || !cell.dataset.col) return;
+      resizeDragState = {
+        col: cell.dataset.col,
+        startX: e.clientX,
+        startW: cell.getBoundingClientRect().width,
+        handle: e.target,
+        minW: 4 * parseFloat(getComputedStyle(document.body).fontSize)
+      };
+      e.target.classList.add('dragging');
+      e.target.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+
+    document.addEventListener('pointermove', function(e) {
+      if (!resizeDragState) return;
+      resizeDragCurrentX = e.clientX;
+      if (resizeDragRafId) return;
+      resizeDragRafId = requestAnimationFrame(function() {
+        resizeDragRafId = null;
+        if (!resizeDragState) return;
+        const dx = resizeDragCurrentX - resizeDragState.startX;
+        const newW = Math.max(resizeDragState.minW, resizeDragState.startW + dx);
+        document.documentElement.style.setProperty('--col-' + resizeDragState.col, newW + 'px');
+      });
+    });
+
+    document.addEventListener('pointerup', function(e) {
+      if (!resizeDragState) return;
+      resizeDragState.handle.classList.remove('dragging');
+      const col = resizeDragState.col;
+      resizeDragState = null;
+      if (resizeDragRafId) { cancelAnimationFrame(resizeDragRafId); resizeDragRafId = null; }
+      const raw = getComputedStyle(document.documentElement).getPropertyValue('--col-' + col).trim();
+      const w = parseFloat(raw);
+      if (!isNaN(w)) {
+        fetch('/set-col-width', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: col, width: w })
+        });
+      }
+    });
+
+    document.addEventListener('dblclick', function(e) {
+      if (!e.target.classList.contains('col-resize-handle')) return;
+      const cell = e.target.closest('.hdr-cell');
+      if (!cell || !cell.dataset.col) return;
+      const col = cell.dataset.col;
+      document.documentElement.style.removeProperty('--col-' + col);
+      fetch('/set-col-width', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: col, width: null })
+      });
+    });
+
     // ── SSE ───────────────────────────────────────────────────────────────────
 
     const es = new EventSource('/events');
@@ -1385,7 +1532,19 @@
       if (findTerm) closeFind();
       activePropertyFilters = {};
       renderPropertyFilters();
+      sourceActive = false;
+      document.getElementById('hdr-src').classList.add('hidden');
     });
+    // ── restore saved column widths ──────────────────────────────────────────
+
+    fetch('/prefs').then(function(r) { return r.json(); }).then(function(p) {
+      if (!p.columnWidths) return;
+      const root = document.documentElement;
+      Object.keys(p.columnWidths).forEach(function(key) {
+        root.style.setProperty('--col-' + key, p.columnWidths[key] + 'px');
+      });
+    });
+
     // ── path-mapping modal ───────────────────────────────────────────────────
 
     let pathModalFile = '', pathModalLine = '';
