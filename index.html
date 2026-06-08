@@ -354,6 +354,26 @@
     .col-resize-handle:hover { background: rgba(88,166,255,0.3); border-radius: 2px; }
     .col-resize-handle.dragging { background: rgba(88,166,255,0.55); border-radius: 2px; }
 
+    .hdr-col-close {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      visibility: hidden;
+      font-size: 10px;
+      line-height: 1;
+      padding: 1px 4px;
+      border: none;
+      background: none;
+      color: var(--text-faint);
+      cursor: pointer;
+      border-radius: 3px;
+      font-family: inherit;
+      z-index: 5;
+    }
+    .hdr-cell:hover .hdr-col-close { visibility: visible; }
+    .hdr-col-close:hover { background: var(--border); color: var(--text-hi); }
+
     /* ── clickable property keys in detail panel ── */
     .prop-key { cursor: pointer; }
     .prop-key:hover { text-decoration: underline dotted; }
@@ -1053,7 +1073,20 @@
       hdrCell.className = 'hdr-cell hdr-col';
       hdrCell.dataset.col = cssKey;
       hdrCell.style.width = 'var(--col-' + cssKey + ')';
-      hdrCell.innerHTML = esc(prop) + '<span class="col-resize-handle"></span>';
+      hdrCell.appendChild(document.createTextNode(prop));
+      const closeBtn = document.createElement('button');
+      closeBtn.className = 'hdr-col-close';
+      closeBtn.textContent = '✕';
+      closeBtn.title = 'Spalte entfernen';
+      closeBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        customColumns = customColumns.filter(function(c) { return c !== prop; });
+        removeColumnFromEntries(prop);
+      });
+      hdrCell.appendChild(closeBtn);
+      const resizeHandle = document.createElement('span');
+      resizeHandle.className = 'col-resize-handle';
+      hdrCell.appendChild(resizeHandle);
       hdr.insertBefore(hdrCell, hdrMsg);
       withScrollAnchor(function() {
         list.querySelectorAll('.entry').forEach(function(entry) {
