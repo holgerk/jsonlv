@@ -111,7 +111,7 @@
     body.light #autoscroll-btn.on { background: #ddf4ff; color: #0969da; border-color: #0969da; }
     body.solarized #autoscroll-btn.on { background: #d4eaf7; color: #268bd2; border-color: #268bd2; }
 
-    #settings-btn, #clear-btn {
+    #clear-btn {
       font-family: inherit;
       font-size: 11px;
       padding: 2px 10px;
@@ -121,32 +121,8 @@
       color: var(--text-dim);
       cursor: pointer;
     }
-    #settings-btn:hover, #clear-btn:hover { background: var(--border); color: var(--text-hi); }
+    #clear-btn:hover { background: var(--border); color: var(--text-hi); }
 
-    #settings-panel {
-      position: absolute;
-      top: calc(100% + 4px);
-      right: 0;
-      background: var(--bg-2);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 8px 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      z-index: 200;
-      white-space: nowrap;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    }
-    #settings-panel label {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      font-size: 12px;
-      color: var(--text);
-      cursor: pointer;
-    }
-    #settings-panel input[type="radio"] { cursor: pointer; }
 
     /* ── find bar ── */
     #find-bar {
@@ -509,13 +485,7 @@
     <button class="filter-btn CRITICAL" data-level="CRITICAL">CRITICAL</button>
     <button class="filter-btn DEBUG"    data-level="DEBUG">DEBUG</button>
     <button id="clear-btn">Clear</button>
-    <button id="settings-btn">⚙ Settings</button>
     <button id="autoscroll-btn" class="on">⬇ Auto-scroll</button>
-    <div id="settings-panel" class="hidden">
-      <label><input type="radio" name="theme" value="dark"> Dark</label>
-      <label><input type="radio" name="theme" value="light"> Light</label>
-      <label><input type="radio" name="theme" value="solarized"> Solarized</label>
-    </div>
   </div>
 
   <div id="find-bar" class="hidden">
@@ -1370,44 +1340,14 @@
     document.getElementById('find-next').addEventListener('click', findNext);
     document.getElementById('find-close').addEventListener('click', closeFind);
 
-    // ── theme / settings panel ────────────────────────────────────────────────
+    // ── theme (set from the native app menu) ──────────────────────────────────
 
     const THEMES = ['dark', 'light', 'solarized'];
 
     function applyTheme(name) {
       document.body.classList.remove(...THEMES);
       if (name !== 'dark') document.body.classList.add(name);
-      document.querySelectorAll('input[name="theme"]').forEach(function(r) {
-        r.checked = r.value === name;
-      });
-      fetch('/set-theme', { method: 'POST', body: name });
     }
-
-    // Initialize radio state from server-injected body class.
-    (function() {
-      var active = THEMES.find(function(t) { return document.body.classList.contains(t); }) || 'dark';
-      document.querySelectorAll('input[name="theme"]').forEach(function(r) {
-        r.checked = r.value === active;
-      });
-    })();
-
-    const settingsBtn = document.getElementById('settings-btn');
-    const settingsPanel = document.getElementById('settings-panel');
-
-    settingsBtn.addEventListener('click', function(e) {
-      e.stopPropagation();
-      settingsPanel.classList.toggle('hidden');
-    });
-
-    document.addEventListener('click', function() {
-      settingsPanel.classList.add('hidden');
-    });
-
-    settingsPanel.addEventListener('click', function(e) { e.stopPropagation(); });
-
-    settingsPanel.querySelectorAll('input[name="theme"]').forEach(function(r) {
-      r.addEventListener('change', function() { applyTheme(r.value); });
-    });
 
     // ── global keyboard shortcuts ─────────────────────────────────────────────
 

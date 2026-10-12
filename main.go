@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -221,15 +222,6 @@ func main() {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	mux.HandleFunc("/set-theme", func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		theme := strings.TrimSpace(string(body))
-		if theme == "dark" || theme == "light" || theme == "solarized" {
-			setThemePref(theme)
-		}
-		w.WriteHeader(http.StatusNoContent)
-	})
-
 	mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
 		flusher := w.(http.Flusher)
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -294,7 +286,7 @@ func main() {
 
 	wv := webview.New(true)
 	defer wv.Destroy()
-	setupAppMenu()
+	setupAppMenu(prefs.Theme)
 	setupAppIcon()
 
 	mux.HandleFunc("/open", func(w http.ResponseWriter, r *http.Request) {
@@ -378,6 +370,14 @@ func main() {
 				setWindowPref(frame[0], frame[1], frame[2], frame[3])
 				restartApp()
 			default:
+				if theme, ok := strings.CutPrefix(action, "theme:"); ok {
+					setThemePref(theme)
+					wv.Dispatch(func() {
+						SetThemeMenuCheck(theme)
+						wv.Eval("applyTheme(" + strconv.Quote(theme) + ")")
+					})
+					continue
+				}
 				w.Add(action)
 				recent := addRecent([]string{action})
 				wv.Dispatch(func() { RebuildRecentMenu(recent) })

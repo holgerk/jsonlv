@@ -58,6 +58,7 @@ extern void cOpenFile(const char *path);
 extern void cClearRecent(void);
 extern void cRestartApp(void);
 extern void cClearLogFiles(void);
+extern void cSetTheme(const char *name);
 extern void cSaveWindowFrame(CGFloat x, CGFloat y, CGFloat w, CGFloat h);
 
 // ── File menu handler ─────────────────────────────────────────────────────────
@@ -71,6 +72,9 @@ extern void cSaveWindowFrame(CGFloat x, CGFloat y, CGFloat w, CGFloat h);
 - (void)doClear:(id)sender         { cClearRecent(); }
 - (void)doRestart:(id)sender       { cRestartApp(); }
 - (void)doTruncateLogs:(id)sender  { cClearLogFiles(); }
+- (void)doSetTheme:(NSMenuItem *)sender {
+    cSetTheme([sender.representedObject UTF8String]);
+}
 @end
 
 static JSONLVMenuHandler *gMenuHandler = nil;
@@ -230,7 +234,17 @@ char* openFilePicker(void) {
     return NULL;
 }
 
-void setupAppMenu() {
+static NSMenu *gThemeMenu = nil;
+
+void setThemeMenuCheckC(const char *theme) {
+    NSString *t = [NSString stringWithUTF8String:theme];
+    for (NSMenuItem *item in gThemeMenu.itemArray) {
+        item.state = [item.representedObject isEqualToString:t]
+            ? NSControlStateValueOn : NSControlStateValueOff;
+    }
+}
+
+void setupAppMenu(const char *theme) {
     NSMenu *menubar = [NSMenu new];
     [NSApp setMainMenu:menubar];
 
@@ -242,6 +256,24 @@ void setupAppMenu() {
     NSString *name = [[NSProcessInfo processInfo] processName];
 
     JSONLVMenuHandler *appHandler = [JSONLVMenuHandler new];
+
+    NSMenuItem *themeItem = [[NSMenuItem alloc]
+        initWithTitle:@"Darstellung" action:nil keyEquivalent:@""];
+    [appMenu addItem:themeItem];
+    gThemeMenu = [[NSMenu alloc] initWithTitle:@"Darstellung"];
+    [themeItem setSubmenu:gThemeMenu];
+    NSArray<NSString*> *themeIDs    = @[@"dark", @"light", @"solarized"];
+    NSArray<NSString*> *themeTitles = @[@"Dark", @"Light", @"Solarized"];
+    for (NSUInteger i = 0; i < themeIDs.count; i++) {
+        NSMenuItem *item = [[NSMenuItem alloc]
+            initWithTitle:themeTitles[i] action:@selector(doSetTheme:) keyEquivalent:@""];
+        item.target = appHandler;
+        item.representedObject = themeIDs[i];
+        [gThemeMenu addItem:item];
+    }
+    setThemeMenuCheckC(theme);
+    [appMenu addItem:[NSMenuItem separatorItem]];
+
     NSMenuItem *restartItem = [[NSMenuItem alloc]
         initWithTitle:@"Neu starten" action:@selector(doRestart:) keyEquivalent:@"r"];
     restartItem.target = appHandler;
@@ -273,7 +305,17 @@ import (
 	"unsafe"
 )
 
-func setupAppMenu() { C.setupAppMenu() }
+func setupAppMenu(theme string) {
+	cs := C.CString(theme)
+	defer C.free(unsafe.Pointer(cs))
+	C.setupAppMenu(cs)
+}
+
+func SetThemeMenuCheck(theme string) {
+	cs := C.CString(theme)
+	defer C.free(unsafe.Pointer(cs))
+	C.setThemeMenuCheckC(cs)
+}
 func setupAppIcon()  { C.setupAppIcon() }
 
 func PickLocalFile() string {
