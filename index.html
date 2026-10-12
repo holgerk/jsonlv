@@ -188,6 +188,9 @@
       border-bottom: 1px solid transparent;
       line-height: 1.6;
       cursor: pointer;
+      /* Skip layout/paint for off-screen rows; 'auto' remembers the rendered height. */
+      content-visibility: auto;
+      contain-intrinsic-size: auto 26px;
     }
     .entry:hover { background: var(--bg-2); }
 
@@ -538,6 +541,7 @@
     function srcColor(src) { return FRUIT_COLORS[srcIdx(src)]; }
 
     const BATCH      = 200;
+    const MAX_ENTRIES = 20000; // oldest entries are dropped beyond this
     const rawData    = new WeakMap(); // entry → raw log line string
     const sourceData = new WeakMap(); // entry → source filename
     let customColumns = [];
@@ -1157,6 +1161,37 @@
       }
     }
 
+    // Removes the oldest entries (and their details panels) beyond MAX_ENTRIES.
+    function trimOldEntries() {
+      let excess = domCount - MAX_ENTRIES;
+      if (excess <= 0) return;
+      const heightBefore = list.scrollHeight;
+      let removedMarks = false;
+      while (excess > 0) {
+        const entry = list.querySelector('.entry');
+        if (!entry) break;
+        const next = entry.nextElementSibling;
+        if (next && next.classList.contains('details')) {
+          if (next.querySelector('mark')) removedMarks = true;
+          next.remove();
+        }
+        if (entry.querySelector('mark')) removedMarks = true;
+        const level = entry.dataset.level;
+        if (counts[level] !== undefined) counts[level]--;
+        counts.total--;
+        entry.remove();
+        domCount--;
+        excess--;
+      }
+      if (!autoScroll) list.scrollTop -= heightBefore - list.scrollHeight;
+      if (removedMarks) {
+        const current = findMatches[findIdx];
+        findMatches = Array.from(list.querySelectorAll('mark'));
+        findIdx = Math.max(findMatches.indexOf(current), findMatches.length ? 0 : -1);
+        updateFindStatus();
+      }
+    }
+
     function drainQueue() {
       rafPending = false;
       if (!queue.length) return;
@@ -1173,6 +1208,7 @@
       queue.splice(0, n);
       domCount += n;
       list.appendChild(frag);
+      trimOldEntries();
 
       updateFilterCounts();
       applyFindToNewEntries(newEntries);
