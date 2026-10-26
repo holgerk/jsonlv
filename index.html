@@ -367,6 +367,7 @@
     .row-menu-btn:hover { background: var(--border); color: var(--text-hi); }
 
     /* ── path-mapping modal ── */
+    #drop-overlay { position: fixed; inset: 8px; z-index: 10001; display: flex; align-items: center; justify-content: center; border: 2px dashed var(--svc-color); border-radius: 12px; background: color-mix(in srgb, var(--bg) 80%, transparent); color: var(--text-hi); font-size: 14px; pointer-events: none; }
     #path-modal { position: fixed; inset: 0; z-index: 10000; display: flex; align-items: center; justify-content: center; }
     #path-modal-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.45); }
     #path-modal-box { position: relative; background: var(--bg-2); border: 1px solid var(--border); border-radius: 12px; padding: 22px 24px; max-width: 520px; width: 90%; box-shadow: 0 16px 48px rgba(0,0,0,0.4); }
@@ -515,6 +516,8 @@
       <p>Waiting for log input…</p>
     </div>
   </div>
+
+  <div id="drop-overlay" class="hidden">Log-Dateien hier ablegen</div>
 
   <div id="path-modal" class="hidden">
     <div id="path-modal-overlay"></div>
@@ -1370,6 +1373,12 @@
     function applyTheme(name) {
       document.body.classList.remove(...THEMES);
       if (name !== 'dark') document.body.classList.add(name);
+    }
+
+    // ── file drop (toggled by the native drag handler) ────────────────────────
+
+    function setDropOverlay(on) {
+      document.getElementById('drop-overlay').classList.toggle('hidden', !on);
     }
 
     // ── global keyboard shortcuts ─────────────────────────────────────────────

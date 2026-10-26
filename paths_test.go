@@ -74,3 +74,13 @@ func TestAddMappingExactWhenNoCommonSuffix(t *testing.T) {
 	mappingMu.RUnlock()
 	assert.True(t, ok)
 }
+
+func TestRegularFiles_KeepsOnlyExistingRegularFiles(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "app.log")
+	require.NoError(t, os.WriteFile(file, []byte("{}\n"), 0o644))
+
+	got := regularFiles([]string{file, dir, filepath.Join(dir, "missing.log")})
+
+	assert.Equal(t, []string{file}, got)
+}

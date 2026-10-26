@@ -9,7 +9,8 @@ import (
 const maxRecent = 10
 
 // menuFileCh carries actions from native menu callbacks to the main goroutine.
-// Values: "open" = show file picker, "clear" = clear recent list, anything
+// Values: "open" = show file picker, "clear" = clear recent list,
+// "drop:<paths>" = newline-separated paths dropped onto the window, anything
 // else is treated as a file path to tail directly.
 var menuFileCh = make(chan string, 10)
 

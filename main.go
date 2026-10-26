@@ -329,21 +329,24 @@ func main() {
 	recent := loadRecent()
 	SetupFileMenu(recent)
 
+	openPaths := func(paths []string) {
+		if len(paths) == 0 {
+			return
+		}
+		for _, p := range paths {
+			w.Add(p)
+		}
+		recent := addRecent(paths)
+		wv.Dispatch(func() { RebuildRecentMenu(recent) })
+	}
+
 	go func() {
 		for action := range menuFileCh {
 			switch action {
 			case "open":
 				result := make(chan []string, 1)
 				wv.Dispatch(func() { result <- PickMultipleFiles() })
-				paths := <-result
-				if len(paths) == 0 {
-					continue
-				}
-				for _, p := range paths {
-					w.Add(p)
-				}
-				recent := addRecent(paths)
-				wv.Dispatch(func() { RebuildRecentMenu(recent) })
+				openPaths(<-result)
 			case "clear":
 				clearRecent()
 				wv.Dispatch(func() { RebuildRecentMenu(nil) })
@@ -370,6 +373,10 @@ func main() {
 				setWindowPref(frame[0], frame[1], frame[2], frame[3])
 				restartApp()
 			default:
+				if dropped, ok := strings.CutPrefix(action, "drop:"); ok {
+					openPaths(regularFiles(strings.Split(dropped, "\n")))
+					continue
+				}
 				if theme, ok := strings.CutPrefix(action, "theme:"); ok {
 					setThemePref(theme)
 					wv.Dispatch(func() {
@@ -411,6 +418,7 @@ func main() {
 			SetWindowFrame(winPtr, prefs.Window.X, prefs.Window.Y, savedW, savedH)
 		}
 		InstallAppDelegate(winPtr)
+		InstallFileDrop(winPtr)
 	})
 
 	// Ask to reopen recent files when launched without arguments and not piped.

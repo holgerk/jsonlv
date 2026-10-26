@@ -88,3 +88,15 @@ func saveMappings() {
 	mappingMu.RUnlock()
 	os.WriteFile(f, data, 0o644) //nolint:errcheck
 }
+
+// regularFiles returns the paths that exist and are regular files,
+// dropping directories and anything that cannot be stat'ed.
+func regularFiles(paths []string) []string {
+	var out []string
+	for _, p := range paths {
+		if fi, err := os.Stat(p); err == nil && fi.Mode().IsRegular() {
+			out = append(out, p)
+		}
+	}
+	return out
+}

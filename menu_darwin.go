@@ -2,9 +2,11 @@ package main
 
 /*
 #cgo CFLAGS: -x objective-c
-#cgo LDFLAGS: -framework Cocoa
+#cgo LDFLAGS: -framework Cocoa -framework WebKit
 #include <stdlib.h>
 #import <Cocoa/Cocoa.h>
+#import <WebKit/WebKit.h>
+#import <objc/runtime.h>
 
 static void dot(NSColor *c, CGFloat x, CGFloat y, CGFloat r) {
     [c setFill];
@@ -60,6 +62,7 @@ extern void cRestartApp(void);
 extern void cClearLogFiles(void);
 extern void cSetTheme(const char *name);
 extern void cSaveWindowFrame(CGFloat x, CGFloat y, CGFloat w, CGFloat h);
+extern void cDropFiles(const char *pathsNL);
 
 // ── File menu handler ─────────────────────────────────────────────────────────
 
@@ -151,6 +154,93 @@ void installAppDelegate(void *winPtr) {
     gAppDelegate = [JSONLVAppDelegate new];
     gAppDelegate.window = (__bridge NSWindow*)winPtr;
     [NSApp setDelegate:gAppDelegate];
+}
+
+// ── File drag & drop ──────────────────────────────────────────────────────────
+// WKWebView only hands File blobs (no paths) to the page, and by default
+// navigates to a dropped file. We patch WKWebView's drag-destination methods
+// to intercept file-URL drags and forward the paths to Go; every other drag
+// (text selection etc.) goes to the original implementation. We patch the
+// class rather than isa-swizzling the instance because WebKit's KVO subclass
+// would undo that.
+
+static IMP gOrigEntered, gOrigUpdated, gOrigExited, gOrigPrepare, gOrigPerform, gOrigConclude;
+
+static NSArray<NSURL*> *dragFileURLs(id<NSDraggingInfo> info) {
+    return [info.draggingPasteboard readObjectsForClasses:@[[NSURL class]]
+                                                  options:@{NSPasteboardURLReadingFileURLsOnlyKey: @YES}];
+}
+
+static void setDropOverlay(WKWebView *wv, BOOL on) {
+    NSString *js = [NSString stringWithFormat:
+        @"window.setDropOverlay && setDropOverlay(%@)", on ? @"true" : @"false"];
+    [wv evaluateJavaScript:js completionHandler:nil];
+}
+
+#define ORIG(ret, imp, info) ((ret(*)(id, SEL, id))imp)(self, _cmd, info)
+
+static NSDragOperation dropEntered(id self, SEL _cmd, id<NSDraggingInfo> info) {
+    if (dragFileURLs(info).count == 0) return ORIG(NSDragOperation, gOrigEntered, info);
+    setDropOverlay(self, YES);
+    return NSDragOperationCopy;
+}
+
+static NSDragOperation dropUpdated(id self, SEL _cmd, id<NSDraggingInfo> info) {
+    if (dragFileURLs(info).count == 0) return ORIG(NSDragOperation, gOrigUpdated, info);
+    return NSDragOperationCopy;
+}
+
+static void dropExited(id self, SEL _cmd, id<NSDraggingInfo> info) {
+    setDropOverlay(self, NO);
+    ORIG(void, gOrigExited, info);
+}
+
+static BOOL dropPrepare(id self, SEL _cmd, id<NSDraggingInfo> info) {
+    if (dragFileURLs(info).count == 0) return ORIG(BOOL, gOrigPrepare, info);
+    return YES;
+}
+
+static BOOL dropPerform(id self, SEL _cmd, id<NSDraggingInfo> info) {
+    NSArray<NSURL*> *urls = dragFileURLs(info);
+    if (urls.count == 0) return ORIG(BOOL, gOrigPerform, info);
+    setDropOverlay(self, NO);
+    NSMutableArray<NSString*> *paths = [NSMutableArray array];
+    for (NSURL *u in urls) [paths addObject:u.path];
+    cDropFiles([[paths componentsJoinedByString:@"\n"] UTF8String]);
+    return YES;
+}
+
+static void dropConclude(id self, SEL _cmd, id<NSDraggingInfo> info) {
+    if (dragFileURLs(info).count == 0) ORIG(void, gOrigConclude, info);
+}
+
+static WKWebView *findWebView(NSView *v) {
+    if ([v isKindOfClass:[WKWebView class]]) return (WKWebView*)v;
+    for (NSView *sub in v.subviews) {
+        WKWebView *found = findWebView(sub);
+        if (found) return found;
+    }
+    return nil;
+}
+
+static IMP patch(SEL sel, IMP imp) {
+    Method m = class_getInstanceMethod([WKWebView class], sel);
+    return class_replaceMethod([WKWebView class], sel, imp, method_getTypeEncoding(m))
+        ?: method_getImplementation(m);
+}
+
+void installFileDropC(void *winPtr) {
+    NSWindow *win = (__bridge NSWindow*)winPtr;
+    WKWebView *wv = findWebView(win.contentView);
+    if (!wv || gOrigEntered) return;
+
+    gOrigEntered  = patch(@selector(draggingEntered:),         (IMP)dropEntered);
+    gOrigUpdated  = patch(@selector(draggingUpdated:),         (IMP)dropUpdated);
+    gOrigExited   = patch(@selector(draggingExited:),          (IMP)dropExited);
+    gOrigPrepare  = patch(@selector(prepareForDragOperation:), (IMP)dropPrepare);
+    gOrigPerform  = patch(@selector(performDragOperation:),    (IMP)dropPerform);
+    gOrigConclude = patch(@selector(concludeDragOperation:),   (IMP)dropConclude);
+    [wv registerForDraggedTypes:@[NSPasteboardTypeFileURL]];
 }
 
 // ── Window geometry ───────────────────────────────────────────────────────────
@@ -354,6 +444,11 @@ func RebuildRecentMenu(recent []string) {
 
 func InstallAppDelegate(winPtr unsafe.Pointer) {
 	C.installAppDelegate(winPtr)
+}
+
+// InstallFileDrop makes files dropped onto the window open as log sources.
+func InstallFileDrop(winPtr unsafe.Pointer) {
+	C.installFileDropC(winPtr)
 }
 
 func GetWindowFrame(winPtr unsafe.Pointer) (x, y, w, h float64) {

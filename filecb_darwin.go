@@ -53,6 +53,14 @@ func cSetTheme(name *C.char) {
 	}
 }
 
+//export cDropFiles
+func cDropFiles(pathsNL *C.char) {
+	select {
+	case menuFileCh <- "drop:" + C.GoString(pathsNL):
+	default:
+	}
+}
+
 //export cSaveWindowFrame
 func cSaveWindowFrame(x, y, w, h C.CGFloat) {
 	setWindowPref(float64(x), float64(y), float64(w), float64(h))
