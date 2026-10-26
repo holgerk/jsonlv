@@ -94,6 +94,19 @@ func (b *broker) reset() {
 	b.mu.Unlock()
 }
 
+// removeSource drops all buffered Log Entries from source.
+func (b *broker) removeSource(source string) {
+	b.mu.Lock()
+	kept := b.history[:0]
+	for _, msg := range b.history {
+		if msg.S != source {
+			kept = append(kept, msg)
+		}
+	}
+	b.history = kept
+	b.mu.Unlock()
+}
+
 func (b *broker) unsubscribe(ch chan logMsg) {
 	b.mu.Lock()
 	delete(b.clients, ch)
@@ -164,7 +177,7 @@ func main() {
 		}()
 	} else {
 		for _, path := range files {
-			w.Register(path)
+			stop := w.Register(path)
 			source := filepath.Base(path)
 			go func() {
 				tail, err := lastNLines(path, *lines)
@@ -178,7 +191,7 @@ func main() {
 					}
 				}
 				if *follow {
-					followFile(path, source, b)
+					followFile(path, source, b, stop)
 				}
 			}()
 		}
@@ -256,7 +269,36 @@ func main() {
 		}
 	})
 
+	// onFileClosed runs after a file is closed from the open files dialog;
+	// the GUI sets it to drop the file from the recent list.
+	var onFileClosed func(path string)
+
+	mux.HandleFunc("/files", func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(rw).Encode(w.Files()) //nolint:errcheck
+	})
+
+	mux.HandleFunc("/close-file", func(rw http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Path string `json:"path"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Path == "" {
+			http.Error(rw, "bad request", http.StatusBadRequest)
+			return
+		}
+		removed := w.Close(req.Path)
+		if onFileClosed != nil {
+			onFileClosed(req.Path)
+		}
+		rw.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(rw).Encode(map[string]bool{"removed": removed}) //nolint:errcheck
+	})
+
 	if *headless {
+		mux.HandleFunc("/add-file", func(rw http.ResponseWriter, r *http.Request) {
+			w.Add(r.URL.Query().Get("path"))
+			rw.WriteHeader(http.StatusNoContent)
+		})
 		mux.HandleFunc("/inject", func(w http.ResponseWriter, r *http.Request) {
 			body, _ := io.ReadAll(r.Body)
 			src := r.URL.Query().Get("src")
@@ -266,9 +308,12 @@ func main() {
 			b.publish(src, strings.TrimSpace(string(body)))
 			w.WriteHeader(http.StatusNoContent)
 		})
-		mux.HandleFunc("/reset", func(w http.ResponseWriter, r *http.Request) {
+		mux.HandleFunc("/reset", func(rw http.ResponseWriter, r *http.Request) {
+			for _, p := range w.Files() {
+				w.Close(p)
+			}
 			b.reset()
-			w.WriteHeader(http.StatusNoContent)
+			rw.WriteHeader(http.StatusNoContent)
 		})
 	}
 
@@ -329,6 +374,11 @@ func main() {
 	recent := loadRecent()
 	SetupFileMenu(recent)
 
+	onFileClosed = func(path string) {
+		recent := removeRecent(path)
+		wv.Dispatch(func() { RebuildRecentMenu(recent) })
+	}
+
 	openPaths := func(paths []string) {
 		if len(paths) == 0 {
 			return
@@ -347,6 +397,8 @@ func main() {
 				result := make(chan []string, 1)
 				wv.Dispatch(func() { result <- PickMultipleFiles() })
 				openPaths(<-result)
+			case "files":
+				wv.Dispatch(func() { wv.Eval("openFilesDialog()") })
 			case "clear":
 				clearRecent()
 				wv.Dispatch(func() { RebuildRecentMenu(nil) })

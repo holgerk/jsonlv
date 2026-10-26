@@ -16,6 +16,14 @@ func cMenuOpenFiles() {
 	}
 }
 
+//export cShowOpenFiles
+func cShowOpenFiles() {
+	select {
+	case menuFileCh <- "files":
+	default:
+	}
+}
+
 //export cOpenFile
 func cOpenFile(path *C.char) {
 	menuFileCh <- C.GoString(path)

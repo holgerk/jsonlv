@@ -53,8 +53,9 @@ func lastNLines(path string, n int) ([]string, error) {
 	return lines, nil
 }
 
-// followFile watches path for new appended lines and publishes them.
-func followFile(path, source string, b *broker) {
+// followFile watches path for new appended lines and publishes them
+// until stop is closed.
+func followFile(path, source string, b *broker, stop <-chan struct{}) {
 	f, err := os.Open(path)
 	if err != nil {
 		return
@@ -69,6 +70,11 @@ func followFile(path, source string, b *broker) {
 	buf := make([]byte, 64*1024)
 
 	for {
+		select {
+		case <-stop:
+			return
+		default:
+		}
 		n, _ := f.Read(buf)
 		if n > 0 {
 			data := append(partial, buf[:n]...)

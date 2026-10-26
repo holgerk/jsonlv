@@ -56,25 +56,32 @@ func parseLineTime(line string) time.Time {
 }
 
 // Watcher tracks which files are being tailed and coordinates
-// line delivery into the broker.
+// line delivery into the broker. Each tracked path maps to a channel
+// that is closed when the file is closed.
 type Watcher struct {
 	b      *broker
 	mu     sync.Mutex
-	tailed map[string]bool
+	tailed map[string]chan struct{}
 }
 
 func NewWatcher(b *broker) *Watcher {
-	return &Watcher{b: b, tailed: map[string]bool{}}
+	return &Watcher{b: b, tailed: map[string]chan struct{}{}}
 }
 
-// Register records path as open without starting a tail goroutine.
-func (w *Watcher) Register(path string) {
+// Register records path as open without starting a tail goroutine and
+// returns the channel that is closed when the file is closed.
+func (w *Watcher) Register(path string) <-chan struct{} {
 	w.mu.Lock()
-	w.tailed[path] = true
-	w.mu.Unlock()
+	defer w.mu.Unlock()
+	if stop, ok := w.tailed[path]; ok {
+		return stop
+	}
+	stop := make(chan struct{})
+	w.tailed[path] = stop
+	return stop
 }
 
-// Files returns the paths of all currently tracked files.
+// Files returns the paths of all currently tracked files, sorted.
 func (w *Watcher) Files() []string {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -82,15 +89,42 @@ func (w *Watcher) Files() []string {
 	for p := range w.tailed {
 		files = append(files, p)
 	}
+	sort.Strings(files)
 	return files
+}
+
+// Close stops tailing path and drops its Log Entries from the broker,
+// unless another open file shares the same Source. It reports whether
+// the entries were dropped.
+func (w *Watcher) Close(path string) bool {
+	source := filepath.Base(path)
+	w.mu.Lock()
+	stop, ok := w.tailed[path]
+	if ok {
+		close(stop)
+		delete(w.tailed, path)
+	}
+	shared := false
+	for p := range w.tailed {
+		if filepath.Base(p) == source {
+			shared = true
+		}
+	}
+	w.mu.Unlock()
+	if !ok || shared {
+		return false
+	}
+	w.b.removeSource(source)
+	return true
 }
 
 // Add begins tailing path if it is not already being watched.
 func (w *Watcher) Add(path string) {
 	w.mu.Lock()
-	already := w.tailed[path]
+	_, already := w.tailed[path]
+	stop := make(chan struct{})
 	if !already {
-		w.tailed[path] = true
+		w.tailed[path] = stop
 	}
 	w.mu.Unlock()
 	if already {
@@ -103,12 +137,17 @@ func (w *Watcher) Add(path string) {
 			fmt.Fprintf(os.Stderr, "error: %s: %v\n", path, err)
 			return
 		}
+		select {
+		case <-stop:
+			return
+		default:
+		}
 		for _, line := range tail {
 			if line != "" {
 				w.b.publish(source, line)
 			}
 		}
-		followFile(path, source, w.b)
+		followFile(path, source, w.b, stop)
 	}()
 }
 
@@ -116,11 +155,10 @@ func (w *Watcher) Add(path string) {
 // sorts all lines by timestamp, publishes them as a single batch,
 // then begins following each file for new lines.
 func (w *Watcher) ReopenSorted(paths []string) {
-	w.mu.Lock()
-	for _, p := range paths {
-		w.tailed[p] = true
+	stops := make([]<-chan struct{}, len(paths))
+	for i, p := range paths {
+		stops[i] = w.Register(p)
 	}
-	w.mu.Unlock()
 
 	var mu sync.Mutex
 	var all []tailLine
@@ -164,9 +202,7 @@ func (w *Watcher) ReopenSorted(paths []string) {
 	}
 	w.b.publishBatch(msgs)
 
-	for _, path := range paths {
-		path := path
-		source := filepath.Base(path)
-		go followFile(path, source, w.b)
+	for i, path := range paths {
+		go followFile(path, filepath.Base(path), w.b, stops[i])
 	}
 }

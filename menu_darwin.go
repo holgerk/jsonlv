@@ -56,6 +56,7 @@ void setupAppIcon() {
 
 // Declarations of Go-exported callbacks (defined in filecb_darwin.go).
 extern void cMenuOpenFiles(void);
+extern void cShowOpenFiles(void);
 extern void cOpenFile(const char *path);
 extern void cClearRecent(void);
 extern void cRestartApp(void);
@@ -71,6 +72,7 @@ extern void cDropFiles(const char *pathsNL);
 @end
 @implementation JSONLVMenuHandler
 - (void)doOpen:(id)sender          { cMenuOpenFiles(); }
+- (void)doShowFiles:(id)sender     { cShowOpenFiles(); }
 - (void)doOpenFile:(id)sender      { cOpenFile([self.filePath UTF8String]); }
 - (void)doClear:(id)sender         { cClearRecent(); }
 - (void)doRestart:(id)sender       { cRestartApp(); }
@@ -119,6 +121,11 @@ void setupFileMenu(const char *recentNL) {
         initWithTitle:@"Öffnen…" action:@selector(doOpen:) keyEquivalent:@"o"];
     openItem.target = gMenuHandler;
     [fileMenu addItem:openItem];
+
+    NSMenuItem *filesItem = [[NSMenuItem alloc]
+        initWithTitle:@"Geöffnete Dateien…" action:@selector(doShowFiles:) keyEquivalent:@"O"];
+    filesItem.target = gMenuHandler;
+    [fileMenu addItem:filesItem];
 
     [fileMenu addItem:[NSMenuItem separatorItem]];
 

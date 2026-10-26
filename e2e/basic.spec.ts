@@ -1,4 +1,7 @@
 import { test, expect, APIRequestContext } from '@playwright/test';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 async function inject(request: APIRequestContext, line: string, src = 'test.log') {
   const res = await request.post(`/inject?src=${encodeURIComponent(src)}`, {
@@ -98,4 +101,26 @@ test('Shift+Enter navigates to newer (next) match', async ({ page, request }) =>
   await page.keyboard.press('Enter');            // → start-1 / total
   await page.keyboard.press('Shift+Enter');      // → start / total
   await expect(page.locator('#find-status')).toHaveText(`${start} / ${total}`);
+});
+
+test('open files dialog closes a file and removes its entries', async ({ page, request }) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jsonlv-'));
+  const file = path.join(dir, 'closeme.log');
+  fs.writeFileSync(file, '{"msg":"from file"}\n');
+  await request.post(`/add-file?path=${encodeURIComponent(file)}`);
+  await inject(request, '{"msg":"from other"}', 'other.log');
+  await page.goto('/');
+  await expect(page.locator('.entry .msg', { hasText: 'from file' })).toBeVisible();
+
+  await page.evaluate(() => (window as any).openFilesDialog());
+  const row = page.locator('#files-list li', { hasText: 'closeme.log' });
+  await expect(row).toContainText(file);
+  await row.getByRole('button', { name: 'Schließen' }).click();
+
+  await expect(page.locator('#files-list')).toContainText('Keine Dateien geöffnet.');
+  await expect(page.locator('.entry .msg', { hasText: 'from file' })).toHaveCount(0);
+  await expect(page.locator('.entry .msg', { hasText: 'from other' })).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#files-modal')).toBeHidden();
 });

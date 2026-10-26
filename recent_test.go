@@ -45,3 +45,14 @@ func TestAddRecent(t *testing.T) {
 		assert.Len(t, got, maxRecent)
 	})
 }
+
+func TestRemoveRecent(t *testing.T) {
+	configDirOverride = t.TempDir()
+	t.Cleanup(func() { configDirOverride = "" })
+	addRecent([]string{"/a.log", "/b.log", "/c.log"})
+
+	got := removeRecent("/b.log")
+
+	assert.Equal(t, []string{"/a.log", "/c.log"}, got)
+	assert.Equal(t, []string{"/a.log", "/c.log"}, loadRecent())
+}

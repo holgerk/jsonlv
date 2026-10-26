@@ -375,6 +375,17 @@
     #path-modal-file { font-size: 11px; color: var(--svc-color); background: var(--bg-3); border-radius: 6px; padding: 6px 10px; margin-bottom: 10px; word-break: break-all; }
     #path-modal-box p { font-size: 11px; color: var(--text-dim); margin-bottom: 16px; line-height: 1.6; }
     #path-modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    #files-modal { position: fixed; inset: 0; z-index: 10000; display: flex; align-items: center; justify-content: center; }
+    #files-modal-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.45); }
+    #files-modal-box { position: relative; background: var(--bg-2); border: 1px solid var(--border); border-radius: 12px; padding: 22px 24px; max-width: 640px; width: 90%; box-shadow: 0 16px 48px rgba(0,0,0,0.4); }
+    #files-modal-box h2 { font-size: 13px; font-weight: 600; color: var(--text-hi); margin-bottom: 12px; }
+    #files-list { list-style: none; max-height: 50vh; overflow-y: auto; margin-bottom: 16px; }
+    #files-list li { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 6px; background: var(--bg-3); margin-bottom: 6px; }
+    #files-list .file-info { flex: 1; min-width: 0; }
+    #files-list .file-name { font-size: 12px; }
+    #files-list .file-path { font-size: 10px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+    #files-list .files-empty { background: none; color: var(--text-dim); font-size: 11px; }
+    #files-modal-actions { display: flex; justify-content: flex-end; }
     .modal-btn { font-family: inherit; font-size: 11px; padding: 5px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-btn); color: var(--text); cursor: pointer; }
     .modal-btn.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
     .modal-btn:hover:not(:disabled) { opacity: 0.85; }
@@ -518,6 +529,17 @@
   </div>
 
   <div id="drop-overlay" class="hidden">Log-Dateien hier ablegen</div>
+
+  <div id="files-modal" class="hidden">
+    <div id="files-modal-overlay"></div>
+    <div id="files-modal-box">
+      <h2>Geöffnete Dateien</h2>
+      <ul id="files-list"></ul>
+      <div id="files-modal-actions">
+        <button class="modal-btn" id="files-modal-done">Fertig</button>
+      </div>
+    </div>
+  </div>
 
   <div id="path-modal" class="hidden">
     <div id="path-modal-overlay"></div>
@@ -1548,6 +1570,68 @@
       Object.keys(p.columnWidths).forEach(function(key) {
         root.style.setProperty('--col-' + key, p.columnWidths[key] + 'px');
       });
+    });
+
+    // ── open files dialog (opened from the native file menu) ─────────────────
+
+    const filesModal = document.getElementById('files-modal');
+    const filesList  = document.getElementById('files-list');
+
+    async function openFilesDialog() {
+      const files = await fetch('/files').then(function(r) { return r.json(); });
+      filesList.innerHTML = '';
+      if (files.length === 0) {
+        filesList.innerHTML = '<li class="files-empty">Keine Dateien geöffnet.</li>';
+      }
+      files.forEach(function(path) {
+        const name = path.split('/').pop();
+        const li = document.createElement('li');
+        li.innerHTML =
+          '<div class="file-info">' +
+            '<div class="file-name" style="color:' + srcColor(name) + '">' + srcFruit(name) + ' ' + esc(name) + '</div>' +
+            '<div class="file-path" title="' + esc(path) + '">&lrm;' + esc(path) + '&lrm;</div>' +
+          '</div>' +
+          '<button class="modal-btn">Schließen</button>';
+        li.querySelector('button').addEventListener('click', function() { closeOpenFile(path); });
+        filesList.appendChild(li);
+      });
+      filesModal.classList.remove('hidden');
+    }
+
+    function closeFilesDialog() { filesModal.classList.add('hidden'); }
+
+    async function closeOpenFile(path) {
+      const res = await fetch('/close-file', { method: 'POST', body: JSON.stringify({ path: path }) });
+      const { removed } = await res.json();
+      if (removed) removeEntriesFromSource(path.split('/').pop());
+      openFilesDialog();
+    }
+
+    // Removes all Log Entries (and their details panels) from the given Source.
+    function removeEntriesFromSource(src) {
+      for (let i = queue.length - 1; i >= 0; i--) {
+        if (queue[i].s === src) queue.splice(i, 1);
+      }
+      list.querySelectorAll('.entry').forEach(function(entry) {
+        if (sourceData.get(entry) !== src) return;
+        const next = entry.nextElementSibling;
+        if (next && next.classList.contains('details')) next.remove();
+        const level = entry.dataset.level;
+        if (counts[level] !== undefined) counts[level]--;
+        counts.total--;
+        entry.remove();
+        domCount--;
+      });
+      if (domCount === 0) empty.classList.remove('hidden');
+      updateFilterCounts();
+      renderPropertyFilters();
+      if (findTerm) doSearch(findTerm);
+    }
+
+    document.getElementById('files-modal-overlay').addEventListener('click', closeFilesDialog);
+    document.getElementById('files-modal-done').addEventListener('click', closeFilesDialog);
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && !filesModal.classList.contains('hidden')) closeFilesDialog();
     });
 
     // ── path-mapping modal ───────────────────────────────────────────────────

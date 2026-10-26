@@ -9,7 +9,8 @@ import (
 const maxRecent = 10
 
 // menuFileCh carries actions from native menu callbacks to the main goroutine.
-// Values: "open" = show file picker, "clear" = clear recent list,
+// Values: "open" = show file picker, "files" = show open-files dialog,
+// "clear" = clear recent list,
 // "drop:<paths>" = newline-separated paths dropped onto the window, anything
 // else is treated as a file path to tail directly.
 var menuFileCh = make(chan string, 10)
@@ -44,11 +45,29 @@ func addRecent(paths []string) []string {
 	if len(cur) > maxRecent {
 		cur = cur[:maxRecent]
 	}
+	saveRecent(cur)
+	return cur
+}
+
+// removeRecent drops path from the recent list so it is not offered
+// again when restoring the last session.
+func removeRecent(path string) []string {
+	cur := loadRecent()
+	kept := cur[:0]
+	for _, c := range cur {
+		if c != path {
+			kept = append(kept, c)
+		}
+	}
+	saveRecent(kept)
+	return kept
+}
+
+func saveRecent(files []string) {
 	f := recentFilePath()
 	os.MkdirAll(filepath.Dir(f), 0o755) //nolint:errcheck
-	data, _ := json.MarshalIndent(cur, "", "  ")
+	data, _ := json.MarshalIndent(files, "", "  ")
 	os.WriteFile(f, data, 0o644) //nolint:errcheck
-	return cur
 }
 
 func clearRecent() {
